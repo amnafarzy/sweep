@@ -1,0 +1,24 @@
+{
+  "name": "sweep",
+  "version": "1.0.0",
+  "description": "A free, open Mac cleanup utility — scan caches, free RAM, find large files, manage login items, and empty trash.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.sweep.cleaner",
+    "productName": "Sweep",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg"]
+    }
+  }
+}

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Sweep</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <span class="brand-name">Sweep</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard"><span class="ico">◎</span> Dashboard</button>
+        <p class="nav-label">Cleanup</p>
+        <button class="nav-item" data-view="caches"><span class="ico">⌫</span> System Junk</button>
+        <button class="nav-item" data-view="large"><span class="ico">▦</span> Large Files</button>
+        <button class="nav-item" data-view="trash"><span class="ico">⊗</span> Trash &amp; Downloads</button>
+        <p class="nav-label">Performance</p>
+        <button class="nav-item" data-view="memory"><span class="ico">◈</span> Free Up RAM</button>
+        <button class="nav-item" data-view="login"><span class="ico">⏻</span> Login Items</button>
+        <button class="nav-item" data-view="apps"><span class="ico">▢</span> Uninstaller</button>
+      </nav>
+      <div class="sidebar-foot">
+        <p>Free &amp; open source</p>
+        <p class="muted">Files move to Trash — recoverable.</p>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="titlebar"></div>
+
+      <!-- DASHBOARD -->
+      <section class="view active" id="view-dashboard">
+        <div class="hero">
+          <div class="hero-ring" id="heroRing">
+            <div class="hero-center">
+              <div class="hero-num" id="heroNum">—</div>
+              <div class="hero-sub">reclaimable</div>
+            </div>
+          </div>
+          <div class="hero-side">
+            <h1>Smart Scan</h1>
+            <p class="lead">Scan every category at once and see what you can safely clean.</p>
+            <button class="btn btn-primary" id="smartScanBtn">Run Smart Scan</button>
+            <div class="dash-stats" id="dashStats"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CACHES -->
+      <section class="view" id="view-caches">
+        <header class="view-head">
+          <div><h1>System Junk</h1><p class="lead">App caches that rebuild automatically. Safe to clear.</p></div>
+          <button class="btn" id="cachesScan">Scan</button>
+        </header>
+        <div class="list-tools" id="cachesTools" hidden>
+          <label class="chk"><input type="checkbox" id="cachesAll" /> Select all</label>
+          <span class="selsize" id="cachesSel">0 B selected</span>
+          <button class="btn btn-danger" id="cachesClean" disabled>Move to Trash</button>
+        </div>
+        <div class="list" id="cachesList"><p class="empty">Tap Scan to begin.</p></div>
+      </section>
+
+      <!-- LARGE FILES -->
+      <section class="view" id="view-large">
+        <header class="view-head">
+          <div><h1>Large Files</h1><p class="lead">Files over a size threshold in your personal folders.</p></div>
+          <div class="head-controls">
+            <select id="largeThreshold">
+              <option value="100">&gt; 100 MB</option>
+              <option value="250">&gt; 250 MB</option>
+              <option value="500">&gt; 500 MB</option>
+              <option value="1000">&gt; 1 GB</option>
+            </select>
+            <button class="btn" id="largeScan">Scan</button>
+          </div>
+        </header>
+        <div class="list-tools" id="largeTools" hidden>
+          <label class="chk"><input type="checkbox" id="largeAll" /> Select all</label>
+          <span class="selsize" id="largeSel">0 B selected</span>
+          <button class="btn btn-danger" id="largeClean" disabled>Move to Trash</button>
+        </div>
+        <div class="list" id="largeList"><p class="empty">Tap Scan to begin.</p></div>
+      </section>
+
+      <!-- TRASH & DOWNLOADS -->
+      <section class="view" id="view-trash">
+        <header class="view-head"><div><h1>Trash &amp; Downloads</h1><p class="lead">Reclaim space from the bin and your downloads pile.</p></div></header>
+        <div class="cards">
+          <div class="card">
+            <div class="card-ico">⊗</div>
+            <div class="card-num" id="trashSize">—</div>
+            <div class="card-label">In Trash</div>
+            <button class="btn btn-danger" id="emptyTrashBtn">Empty Trash</button>
+          </div>
+          <div class="card">
+            <div class="card-ico">▽</div>
+            <div class="card-num" id="dlSize">—</div>
+            <div class="card-label">Downloads folder</div>
+            <button class="btn" id="openDlBtn">Open in Finder</button>
+          </div>
+        </div>
+        <button class="btn" id="trashRefresh" style="margin-top:18px">Refresh sizes</button>
+      </section>
+
+      <!-- MEMORY -->
+      <section class="view" id="view-memory">
+        <header class="view-head"><div><h1>Free Up RAM</h1><p class="lead">Live memory pressure. Purge releases inactive memory.</p></div>
+          <button class="btn" id="memRefresh">Refresh</button>
+        </header>
+        <div class="mem-bar" id="memBar"></div>
+        <div class="mem-legend" id="memLegend"></div>
+        <button class="btn btn-primary" id="purgeBtn" style="margin-top:20px">Purge Inactive Memory</button>
+        <p class="hint">Purge asks for your admin password — it runs the system <code>purge</code> command.</p>
+      </section>
+
+      <!-- LOGIN ITEMS -->
+      <section class="view" id="view-login">
+        <header class="view-head"><div><h1>Login Items</h1><p class="lead">Launch agents that start in the background. Toggling is reversible.</p></div>
+          <button class="btn" id="loginScan">Scan</button>
+        </header>
+        <div class="list" id="loginList"><p class="empty">Tap Scan to begin.</p></div>
+      </section>
+
+      <!-- UNINSTALLER -->
+      <section class="view" id="view-apps">
+        <header class="view-head"><div><h1>Uninstaller</h1><p class="lead">Remove an app and its leftover support files together.</p></div>
+          <button class="btn" id="appsScan">Load apps</button>
+        </header>
+        <div class="list" id="appsList"><p class="empty">Tap Load apps to begin.</p></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-bg" id="modalBg" hidden>
+    <div class="modal">
+      <h2 id="modalTitle">Confirm</h2>
+      <p id="modalBody"></p>
+      <div class="modal-acts">
+        <button class="btn" id="modalCancel">Cancel</button>
+        <button class="btn btn-danger" id="modalOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

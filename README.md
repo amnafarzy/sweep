@@ -18,7 +18,7 @@ This is the part most "cleaner" apps get wrong, so Sweep is conservative by desi
 
 - **Everything is recoverable.** Caches, large files, and uninstalled apps are *moved to the Trash*, not permanently deleted. You can restore anything until you empty the Trash.
 - **Scan first, clean second.** Nothing is touched until you review the list and confirm.
-- **Hard path guards.** The main process refuses to operate on `/`, your home root, `~/Library`, `~/Documents`, `~/Desktop`, `/System`, `/usr`, and other critical paths — no matter what the UI sends. The only path allowed outside your home folder is a single `/Applications/Name.app` bundle (for uninstalls).
+- **Hard path guards (allowlist).** The main process will only trash a path that sits *inside* one of the specific folders Sweep scans (e.g. `~/Library/Caches`, `~/Downloads`, `~/Library/LaunchAgents`) — never one of those folders itself, and never a system path — no matter what the UI sends. The only path allowed outside your home folder is a single `/Applications/Name.app` bundle (for uninstalls). Anything unrecognized is refused (fail-closed), which also avoids case-sensitivity tricks on macOS's case-insensitive filesystem.
 - **No telemetry, no network calls, no bundled scanners.**
 
 ## Run it

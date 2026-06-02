@@ -1,5 +1,15 @@
 const api = window.sweep;
 
+// If the preload bridge failed to load, the app can do nothing useful — surface
+// a clear message instead of throwing an opaque error on every interaction.
+if (!api) {
+  document.body.innerHTML =
+    '<div style="padding:48px;font-family:-apple-system,sans-serif;color:#f5b94d">' +
+    'Sweep failed to initialize: the preload bridge did not load. Try restarting the app.' +
+    '</div>';
+  throw new Error('preload bridge (window.sweep) unavailable');
+}
+
 // ---- helpers ----
 function fmtBytes(n) {
   if (!n || n < 1) return '0 B';
@@ -57,7 +67,21 @@ function buildSelectableList(container, items, { tag } = {}) {
     container.appendChild(row);
   });
 }
-function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// When Full Disk Access is off, scans silently miss files — warn rather than let
+// an incomplete result look like "nothing found". Fire-and-forget; prepends a
+// banner to the list once the probe resolves.
+async function maybeWarnAccess(listEl) {
+  try {
+    const { fullDiskAccess } = await api.checkAccess();
+    if (fullDiskAccess) return;
+    const note = el('div', 'notice',
+      '⚠️ Full Disk Access appears to be off, so some files may be hidden from this scan. ' +
+      'Grant it in System Settings → Privacy &amp; Security → Full Disk Access, then scan again.');
+    listEl.prepend(note);
+  } catch { /* probe failed — don't block the scan */ }
+}
 
 function wireSelection(listEl, items, toolsEl, selEl, allEl, cleanBtn) {
   function update() {
@@ -83,6 +107,7 @@ $('#cachesScan').onclick = async () => {
   cachesData = await api.scanCaches();
   buildSelectableList(list, cachesData);
   getCachesSel = wireSelection(list, cachesData, $('#cachesTools'), $('#cachesSel'), $('#cachesAll'), $('#cachesClean'));
+  maybeWarnAccess(list);
 };
 $('#cachesClean').onclick = async () => {
   const sel = getCachesSel();
@@ -102,6 +127,7 @@ $('#largeScan').onclick = async () => {
   largeData = await api.scanLargeFiles(+$('#largeThreshold').value);
   buildSelectableList(list, largeData, { tag: true });
   getLargeSel = wireSelection(list, largeData, $('#largeTools'), $('#largeSel'), $('#largeAll'), $('#largeClean'));
+  maybeWarnAccess(list);
 };
 $('#largeClean').onclick = async () => {
   const sel = getLargeSel();
@@ -179,7 +205,7 @@ $('#loginScan').onclick = async () => {
         curPath = res.path;
         pathDiv.textContent = curPath;
         tog.classList.toggle('on', cur);
-        toast(cur ? 'Enabled' : 'Disabled');
+        toast(cur ? 'Enabled — applies at next login' : 'Disabled — applies at next login');
       } else {
         toast('Failed: ' + (res.error || 'unknown error'));
       }
@@ -211,10 +237,11 @@ async function uninstall(app) {
   const leftovers = await api.scanAppLeftovers(app.name, app.path);
   const all = [{ path: app.path, size: 0 }, ...leftovers];
   const total = leftovers.reduce((s, x) => s + x.size, 0);
-  const shown = all.slice(0, 20).map((x) => '• ' + x.path).join('\n');
-  const more = all.length > 20 ? `\n…and ${all.length - 20} more` : '';
+  // List EVERY path that will be trashed — never hide items the user is approving.
+  // The modal body scrolls, so a long list stays reviewable.
+  const list = all.map((x) => '• ' + x.path).join('\n');
   const ok = await confirmModal(`Uninstall ${app.name}?`,
-    `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash. Everything is recoverable from the Trash.\n\n${shown}${more}`,
+    `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash — all ${all.length} item(s) are listed below. Everything is recoverable from the Trash.\n\n${list}`,
     'Move all to Trash');
   if (!ok) return;
   const res = await api.trashFiles(all.map((x) => x.path));
@@ -233,6 +260,8 @@ $('#smartScanBtn').onclick = async () => {
   const largeTotal = large.reduce((s, x) => s + x.size, 0);
   const reclaimable = cacheTotal + trash;
   $('#heroNum').textContent = fmtBytes(reclaimable);
+  // The ring is purely cosmetic: it fills proportionally up to a 50 GB reference
+  // point (not a real cap on what can be cleaned), then saturates at 100%.
   const pct = Math.min(100, Math.round((reclaimable / (50 * 1024 * 1024 * 1024)) * 100));
   $('#heroRing').style.setProperty('--deg', (pct * 3.6) + 'deg');
   const stats = [

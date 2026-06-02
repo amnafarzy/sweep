@@ -9,12 +9,12 @@ contextBridge.exposeInMainWorld('sweep', {
   scanLoginItems: () => ipcRenderer.invoke('scan:loginItems'),
   scanApps: () => ipcRenderer.invoke('scan:apps'),
   scanAppLeftovers: (name, appPath) => ipcRenderer.invoke('scan:appLeftovers', name, appPath),
+  checkAccess: () => ipcRenderer.invoke('scan:access'),
 
   cleanCaches: (paths) => ipcRenderer.invoke('clean:caches', paths),
   trashFiles: (paths) => ipcRenderer.invoke('clean:trashFiles', paths),
   emptyTrash: () => ipcRenderer.invoke('clean:emptyTrash'),
   purgeMemory: () => ipcRenderer.invoke('clean:purgeMemory'),
   toggleLoginItem: (p, enable) => ipcRenderer.invoke('toggle:loginItem', p, enable),
-  openPath: (p) => ipcRenderer.invoke('open:path', p),
   openDownloads: () => ipcRenderer.invoke('open:downloads'),
 });

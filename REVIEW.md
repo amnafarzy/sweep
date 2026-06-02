@@ -255,3 +255,28 @@ In priority order:
 5. **M4 / L1** — Validate `appPath` over IPC; escape `'` in `escapeHtml`.
 
 The rest (M2, L2–L7) are quality/clarity improvements that can follow.
+
+---
+
+## Fixes applied (2026-06-02)
+
+All findings above were implemented in a follow-up commit:
+
+| ID | Fix |
+|----|-----|
+| **H1** | `assertSafeToRemove` rewritten as a fail-closed **allowlist** of scanned roots + `/Applications/*.app`; rejects the roots themselves, system paths, `..` traversal, and wrong-case paths. Verified with a 17-case test. `main.js:11-58` |
+| **H2** | Uninstaller now lists **every** path it will trash (modal body already scrolls) and states the full count. `renderer.js` `uninstall()` |
+| **H3** | Leftover matching is **bundle-id-first**; bare-name matches are skipped for names < 4 chars or on a generic-name denylist. `main.js` `findAppLeftovers` / `GENERIC_NAMES` |
+| **M1** | Added `hasFullDiskAccess()` probe + `scan:access` IPC; cache/large-file scans show an amber **Full Disk Access** banner when results may be incomplete. `main.js`, `preload.js`, `renderer.js`, `styles.css` |
+| **M2** | Login-item UI now states changes apply at next login (lead text + toast). `index.html`, `renderer.js` |
+| **M3** | `find` switched to `-print0` / NUL split for filenames with newlines. `main.js` `scanLargeFiles` |
+| **M4** | `findAppLeftovers` validates `appPath` against `/^\/Applications\/[^/]+\.app$/` before use. `main.js` |
+| **L1** | `escapeHtml` now also escapes `'`. `renderer.js` |
+| **L2** | Memory breakdown documented as approximate; `inactive` behaviour commented. `main.js` `getMemory` |
+| **L3** | Unused `open:path` / `openPath` API removed (preload surface trimmed). `preload.js`, `main.js` |
+| **L4** | `resolved.length < 5` heuristic removed (subsumed by the allowlist). `main.js` |
+| **L5** | Renderer shows a clear message if the preload bridge fails to load. `renderer.js` |
+| **L6** | Dashboard-ring 50 GB reference point documented. `renderer.js` |
+| **L7** | `sandbox: true` set explicitly in `webPreferences`. `main.js` |
+
+README's safety section updated to describe the allowlist model.

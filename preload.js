@@ -1,7 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('sweep', {
-  scanCaches: () => ipcRenderer.invoke('scan:caches'),
+  dirSize: (p) => ipcRenderer.invoke('scan:dirSize', p),
+  scanSystemJunk: () => ipcRenderer.invoke('scan:systemJunk'),
   scanMemory: () => ipcRenderer.invoke('scan:memory'),
   scanLargeFiles: (minMB) => ipcRenderer.invoke('scan:largeFiles', minMB),
   scanTrash: () => ipcRenderer.invoke('scan:trash'),

@@ -134,6 +134,19 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .row .r-path { color: var(--text-faint); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .r-size { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 13px; flex-shrink: 0; }
 .row .r-tag { font-size: 10.5px; color: var(--text-faint); background: var(--bg); padding: 2px 7px; border-radius: 5px; flex-shrink: 0; }
+/* Grouped system-junk categories */
+.jcat { background: var(--surface); }
+.jcat-head { display: flex; align-items: center; gap: 12px; padding: 11px 16px; background: var(--bg-2); cursor: pointer; user-select: none; }
+.jcat-head:hover { background: var(--surface-2); }
+.jcat-head input[type=checkbox] { accent-color: var(--mint); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+.caret { color: var(--text-dim); font-size: 11px; width: 11px; text-align: center; transition: transform .15s; }
+.jcat.collapsed .caret { transform: rotate(-90deg); }
+.jcat-title { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcat-count { color: var(--text-faint); font-weight: 500; font-size: 11px; background: var(--bg); padding: 1px 7px; border-radius: 8px; margin-left: 8px; }
+.jcat-sub { color: var(--mint); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+.jcat-items { display: flex; flex-direction: column; gap: 1px; background: var(--line); }
+.jcat.collapsed .jcat-items { display: none; }
+.jcat-items .row { padding-left: 42px; }
 .empty { color: var(--text-faint); padding: 40px; text-align: center; background: var(--surface); }
 .notice { color: var(--amber); background: rgba(245,185,77,.08); border-bottom: 1px solid var(--line); padding: 12px 16px; font-size: 12.5px; line-height: 1.5; }
 .toggle { width: 40px; height: 23px; border-radius: 20px; background: var(--line-2); position: relative; cursor: pointer; flex-shrink: 0; transition: background .15s; border: 0; }
@@ -158,6 +171,7 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 
 /* Modal + toast */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-bg[hidden] { display: none; }
 .modal { background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 26px; width: 420px; max-width: 90vw; }
 .modal h2 { font-size: 18px; margin-bottom: 10px; }
 .modal p { color: var(--text-dim); font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; }

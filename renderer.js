@@ -95,7 +95,8 @@ function buildSelectableList(container, items, { tag } = {}) {
     info.style.flex = '1'; info.style.minWidth = '0';
     const size = el('div', 'r-size', fmtBytes(it.size));
     row.appendChild(cb);
-    if (tag && it.dir) row.appendChild(el('div', 'r-tag', it.dir));
+    const tagText = it.category || it.dir;
+    if (tag && tagText) row.appendChild(el('div', 'r-tag', escapeHtml(tagText)));
     row.appendChild(info);
     row.appendChild(size);
     // Clicking anywhere on the row toggles its checkbox (the checkbox itself
@@ -140,35 +141,127 @@ function wireSelection(listEl, items, toolsEl, selEl, allEl, cleanBtn) {
   return () => [...listEl.querySelectorAll('input[type=checkbox]')].filter((c) => c.checked).map((c) => items[+c.dataset.idx]);
 }
 
-// ================= CACHES =================
-let cachesData = [], getCachesSel;
-$('#cachesScan').onclick = busy($('#cachesScan'), async () => {
+// ================= SYSTEM JUNK (grouped by category) =================
+let cachesData = [], getCachesSel = () => [];
+const collapsedCats = new Set(); // categories the user has collapsed — remembered across rescans
+
+// Render a System Junk result set into the view and wire its controls. Shared by
+// the view's own Scan button and the dashboard Smart Scan, so results gathered on
+// the dashboard show up immediately when you open this view — no second scan.
+function populateSystemJunk(items) {
   const list = $('#cachesList');
-  list.innerHTML = '<p class="empty"><span class="spinner"></span>Scanning caches…</p>';
-  cachesData = await api.scanCaches();
-  buildSelectableList(list, cachesData);
-  getCachesSel = wireSelection(list, cachesData, $('#cachesTools'), $('#cachesSel'), $('#cachesAll'), $('#cachesClean'));
+  cachesData = items;
+  renderSystemJunk(cachesData);
+  $('#cachesAll').onchange = () => {
+    list.querySelectorAll('.item-chk').forEach((c) => { c.checked = $('#cachesAll').checked; });
+    updateJunkSel();
+  };
   maybeWarnAccess(list);
+}
+$('#cachesScan').onclick = busy($('#cachesScan'), async () => {
+  $('#cachesList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning system junk…</p>';
+  populateSystemJunk(await api.scanSystemJunk());
 });
+
+function renderSystemJunk(items) {
+  const list = $('#cachesList');
+  list.innerHTML = '';
+  if (!items.length) { list.appendChild(el('p', 'empty', 'Nothing found — you\'re clean here.')); $('#cachesTools').hidden = true; return; }
+
+  // Group by category, then order categories by how much they'd reclaim.
+  const byCat = new Map();
+  items.forEach((it, idx) => {
+    const c = it.category || 'Other';
+    if (!byCat.has(c)) byCat.set(c, []);
+    byCat.get(c).push({ it, idx });
+  });
+  const cats = [...byCat.entries()]
+    .map(([cat, arr]) => ({ cat, arr, total: arr.reduce((s, x) => s + x.it.size, 0) }))
+    .sort((a, b) => b.total - a.total);
+
+  cats.forEach(({ cat, arr, total }) => {
+    const sec = el('div', 'jcat');
+    if (collapsedCats.has(cat)) sec.classList.add('collapsed');
+
+    const head = el('div', 'jcat-head');
+    const cb = el('input'); cb.type = 'checkbox'; cb.className = 'cat-chk';
+    cb.setAttribute('aria-label', 'Select all in ' + cat);
+    const caret = el('span', 'caret', '▾');
+    const title = el('div', 'jcat-title', `${escapeHtml(cat)}<span class="jcat-count">${arr.length}</span>`);
+    title.style.flex = '1';
+    const sub = el('div', 'jcat-sub', fmtBytes(total));
+    head.append(cb, caret, title, sub);
+    // Click the header (but not its checkbox) to collapse/expand; remember the choice.
+    head.onclick = (e) => {
+      if (e.target === cb) return;
+      sec.classList.toggle('collapsed');
+      if (sec.classList.contains('collapsed')) collapsedCats.add(cat); else collapsedCats.delete(cat);
+    };
+
+    const body = el('div', 'jcat-items');
+    arr.forEach(({ it, idx }) => {
+      const row = el('div', 'row selectable');
+      const icb = el('input'); icb.type = 'checkbox'; icb.className = 'item-chk'; icb.dataset.idx = idx;
+      const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
+      info.style.flex = '1'; info.style.minWidth = '0';
+      const size = el('div', 'r-size', fmtBytes(it.size));
+      row.append(icb, info, size);
+      row.onclick = (e) => { if (e.target === icb) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };
+      body.appendChild(row);
+    });
+
+    cb.onchange = () => { body.querySelectorAll('.item-chk').forEach((c) => { c.checked = cb.checked; }); updateJunkSel(); };
+    sec.append(head, body);
+    list.appendChild(sec);
+  });
+
+  list.querySelectorAll('.item-chk').forEach((c) => (c.onchange = updateJunkSel));
+  $('#cachesTools').hidden = false;
+  getCachesSel = () => [...list.querySelectorAll('.item-chk')].filter((c) => c.checked).map((c) => items[+c.dataset.idx]);
+  updateJunkSel();
+}
+
+// Recompute selected total, the clean button, the global "select all", and each
+// category checkbox's checked/indeterminate state from the live checkboxes.
+function updateJunkSel() {
+  const list = $('#cachesList');
+  const checks = [...list.querySelectorAll('.item-chk')];
+  const sel = checks.filter((c) => c.checked);
+  const total = sel.reduce((s, c) => s + (cachesData[+c.dataset.idx]?.size || 0), 0);
+  $('#cachesSel').textContent = fmtBytes(total) + ' selected';
+  $('#cachesClean').disabled = sel.length === 0;
+  $('#cachesAll').checked = checks.length > 0 && sel.length === checks.length;
+  list.querySelectorAll('.jcat').forEach((sec) => {
+    const cc = sec.querySelector('.cat-chk');
+    const its = [...sec.querySelectorAll('.item-chk')];
+    const on = its.filter((c) => c.checked).length;
+    cc.checked = its.length > 0 && on === its.length;
+    cc.indeterminate = on > 0 && on < its.length;
+  });
+}
 $('#cachesClean').onclick = async () => {
   const sel = getCachesSel();
   const total = sel.reduce((s, x) => s + x.size, 0);
-  const ok = await confirmModal('Clear caches?', `Move ${sel.length} cache folder(s) (${fmtBytes(total)}) to the Trash? Apps will rebuild these automatically. Nothing is permanently deleted.`, 'Move to Trash');
+  const ok = await confirmModal('Clear system junk?', `Move ${sel.length} item(s) (${fmtBytes(total)}) to the Trash? Apps rebuild or re-download these as needed. Nothing is permanently deleted.`, 'Move to Trash');
   if (!ok) return;
-  const res = await api.cleanCaches(sel.map((x) => x.path));
-  toast(`Cleared ${res.ok.length} item(s)${res.failed.length ? `, ${res.failed.length} failed` : ''}`);
+  // A grouped app item carries several cache subfolders in `paths`; expand those.
+  const res = await api.cleanCaches(sel.flatMap((x) => x.paths || [x.path]));
+  toast(`Cleared ${fmtBytes(total)}${res.failed.length ? `, ${res.failed.length} folder(s) failed` : ''}`);
   $('#cachesScan').click();
 };
 
 // ================= LARGE FILES =================
-let largeData = [], getLargeSel;
-$('#largeScan').onclick = busy($('#largeScan'), async () => {
+let largeData = [], getLargeSel = () => [];
+function populateLargeFiles(items) {
   const list = $('#largeList');
-  list.innerHTML = '<p class="empty"><span class="spinner"></span>Scanning your folders…</p>';
-  largeData = await api.scanLargeFiles(+$('#largeThreshold').value);
+  largeData = items;
   buildSelectableList(list, largeData, { tag: true });
   getLargeSel = wireSelection(list, largeData, $('#largeTools'), $('#largeSel'), $('#largeAll'), $('#largeClean'));
   maybeWarnAccess(list);
+}
+$('#largeScan').onclick = busy($('#largeScan'), async () => {
+  $('#largeList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning your folders…</p>';
+  populateLargeFiles(await api.scanLargeFiles(+$('#largeThreshold').value));
 });
 $('#largeClean').onclick = async () => {
   const sel = getLargeSel();
@@ -275,58 +368,75 @@ $('#appsScan').onclick = busy($('#appsScan'), async () => {
     const info = el('div', ''); info.style.flex = '1'; info.style.minWidth = '0';
     info.innerHTML = `<div class="r-name">${escapeHtml(app.name)}</div>`;
     const btn = el('button', 'btn btn-danger', 'Uninstall'); btn.style.padding = '6px 14px'; btn.style.fontSize = '12px';
-    btn.onclick = () => uninstall(app);
+    btn.onclick = busy(btn, () => uninstall(app));
     row.appendChild(info); row.appendChild(btn);
     list.appendChild(row);
   });
 });
 async function uninstall(app) {
-  toast('Finding related files…');
-  const leftovers = await api.scanAppLeftovers(app.name, app.path);
-  const all = [{ path: app.path, size: 0 }, ...leftovers];
-  const total = leftovers.reduce((s, x) => s + x.size, 0);
-  // List EVERY path that will be trashed — never hide items the user is approving.
-  // The modal body scrolls, so a long list stays reviewable.
-  const list = all.map((x) => '• ' + x.path).join('\n');
-  const ok = await confirmModal(`Uninstall ${app.name}?`,
-    `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash — all ${all.length} item(s) are listed below. Everything is recoverable from the Trash.\n\n${list}`,
-    'Move all to Trash');
-  if (!ok) return;
-  const res = await api.trashFiles(all.map((x) => x.path));
-  toast(`Removed ${res.ok.length} item(s)${res.failed.length ? `, ${res.failed.length} failed (may need admin)` : ''}`);
-  $('#appsScan').click();
+  try {
+    toast('Finding related files…');
+    const [leftovers, appSize] = await Promise.all([
+      api.scanAppLeftovers(app.name, app.path),
+      api.dirSize(app.path),
+    ]);
+    const all = [{ path: app.path, size: appSize }, ...leftovers];
+    const total = all.reduce((s, x) => s + x.size, 0);
+    // List EVERY path that will be trashed — never hide items the user is approving.
+    // The modal body scrolls, so a long list stays reviewable.
+    const list = all.map((x) => '• ' + x.path).join('\n');
+    const ok = await confirmModal(`Uninstall ${app.name}?`,
+      `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash — all ${all.length} item(s) are listed below. Everything is recoverable from the Trash.\n\n${list}`,
+      'Move all to Trash');
+    if (!ok) return;
+    const res = await api.trashFiles(all.map((x) => x.path));
+    toast(`Removed ${res.ok.length} item(s)${res.failed.length ? `, ${res.failed.length} failed (may need admin)` : ''}`);
+    $('#appsScan').click();
+  } catch (err) {
+    toast('Error: ' + (err?.message || 'unknown error'));
+  }
 }
 
 // ================= DASHBOARD SMART SCAN =================
 $('#smartScanBtn').onclick = async () => {
   const btn = $('#smartScanBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Scanning…';
-  const [caches, large, trash, dl] = await Promise.all([
-    api.scanCaches(), api.scanLargeFiles(250), api.scanTrash(), api.scanDownloads(),
-  ]);
-  const cacheTotal = caches.reduce((s, x) => s + x.size, 0);
-  const largeTotal = large.reduce((s, x) => s + x.size, 0);
-  const reclaimable = cacheTotal + trash;
-  $('#heroNum').textContent = fmtBytes(reclaimable);
-  // The ring is purely cosmetic: it fills proportionally up to a 50 GB reference
-  // point (not a real cap on what can be cleaned), then saturates at 100%.
-  const pct = Math.min(100, Math.round((reclaimable / (50 * 1024 * 1024 * 1024)) * 100));
-  $('#heroRing').style.setProperty('--deg', (pct * 3.6) + 'deg');
-  const stats = [
-    ['System junk', fmtBytes(cacheTotal), 'caches'],
-    ['In Trash', fmtBytes(trash), 'trash'],
-    ['Large files', fmtBytes(largeTotal), 'large'],
-    ['Downloads', fmtBytes(dl), 'trash'],
-  ];
-  $('#dashStats').innerHTML = stats
-    .map(([k, v, view]) => `<button class="dash-stat" data-view="${view}"><div class="v">${v}</div><div class="k">${k} ›</div></button>`)
-    .join('');
-  $('#dashStats').querySelectorAll('.dash-stat').forEach((s) => { s.onclick = () => showView(s.dataset.view); });
-  btn.disabled = false; btn.textContent = 'Run Smart Scan Again';
-  toast('Scan complete');
-  // The dashboard is the first thing users see, so flag missing Full Disk Access here too.
-  try { $('#dashAccess').hidden = !!(await api.checkAccess()).fullDiskAccess; }
-  catch { /* probe failed — leave the hint hidden */ }
+  try {
+    const [caches, large, trash, dl] = await Promise.all([
+      api.scanSystemJunk(), api.scanLargeFiles(250), api.scanTrash(), api.scanDownloads(),
+    ]);
+    const cacheTotal = caches.reduce((s, x) => s + x.size, 0);
+    const largeTotal = large.reduce((s, x) => s + x.size, 0);
+    const reclaimable = cacheTotal + trash;
+    $('#heroNum').textContent = fmtBytes(reclaimable);
+    // The ring is purely cosmetic: it fills proportionally up to a 50 GB reference
+    // point (not a real cap on what can be cleaned), then saturates at 100%.
+    const pct = Math.min(100, Math.round((reclaimable / (50 * 1024 * 1024 * 1024)) * 100));
+    $('#heroRing').style.setProperty('--deg', (pct * 3.6) + 'deg');
+    const stats = [
+      ['System junk', fmtBytes(cacheTotal), 'caches'],
+      ['In Trash', fmtBytes(trash), 'trash'],
+      ['Large files', fmtBytes(largeTotal), 'large'],
+      ['Downloads', fmtBytes(dl), 'trash'],
+    ];
+    $('#dashStats').innerHTML = stats
+      .map(([k, v, view]) => `<button class="dash-stat" data-view="${view}"><div class="v">${v}</div><div class="k">${k} ›</div></button>`)
+      .join('');
+    $('#dashStats').querySelectorAll('.dash-stat').forEach((s) => { s.onclick = () => showView(s.dataset.view); });
+    // Fill each view with the data we just gathered, so clicking a category opens
+    // an already-populated list instead of an empty "Tap Scan to begin" view.
+    populateSystemJunk(caches);
+    $('#largeThreshold').value = '250';     // match the threshold Smart Scan used
+    populateLargeFiles(large);
+    $('#trashSize').textContent = fmtBytes(trash);
+    $('#dlSize').textContent = fmtBytes(dl);
+    toast('Scan complete');
+    // The dashboard is the first thing users see, so flag missing Full Disk Access here too.
+    try { $('#dashAccess').hidden = !!(await api.checkAccess()).fullDiskAccess; }
+    catch { /* probe failed — leave the hint hidden */ }
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run Smart Scan Again';
+  }
 };
 
 // initial loads when a view is first shown

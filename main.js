@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
 const os = require('os');
 const fsp = require('fs/promises');
@@ -7,6 +7,21 @@ const { promisify } = require('util');
 
 const run = promisify(execFile); // runs a binary directly — NO shell, so no metacharacter injection
 const HOME = os.homedir();
+
+app.setName('Sweep'); // shown in the macOS app menu / "About Sweep" / "Quit Sweep"
+
+// Like `run`, but tolerant: read-only commands such as `du` and `find` exit
+// non-zero the moment they touch an unreadable subpath, yet still print useful
+// partial output on stdout. Return that stdout instead of throwing, so a single
+// permission error deep in a tree doesn't discard the entire result.
+async function runReadable(cmd, args, opts) {
+  try {
+    const { stdout } = await run(cmd, args, opts);
+    return stdout;
+  } catch (err) {
+    return typeof err?.stdout === 'string' ? err.stdout : '';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // SAFETY GUARDS
@@ -77,13 +92,11 @@ async function mapLimit(arr, limit, fn) {
 // SIZE HELPERS  (all paths here are absolute, so they never look like a flag)
 // ---------------------------------------------------------------------------
 async function dirSize(p) {
-  try {
-    const { stdout } = await run('du', ['-sk', p]);
-    const kb = parseInt(stdout.split('\t')[0], 10);
-    return Number.isFinite(kb) ? kb * 1024 : 0;
-  } catch {
-    return 0;
-  }
+  // `du -sk` prints "<kb>\t<path>"; even on a partial (permission-limited) walk
+  // it still reports a running total, which runReadable preserves.
+  const stdout = await runReadable('du', ['-sk', p]);
+  const kb = parseInt(stdout.split('\t')[0], 10);
+  return Number.isFinite(kb) ? kb * 1024 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,21 +145,20 @@ async function scanLargeFiles(minMB) {
     .map((d) => path.join(HOME, d));
   const results = [];
   for (const root of roots) {
-    try {
-      const { stdout } = await run(
-        'find',
-        [root, '-type', 'f', '-size', `+${n}M`, '-not', '-path', '*/.*', '-print0'],
-        { maxBuffer: 1024 * 1024 * 16 }
-      );
-      // NUL-delimited so filenames containing newlines aren't split into bogus paths.
-      const files = stdout.split('\0').filter(Boolean).slice(0, 300);
-      for (const f of files) {
-        try {
-          const st = await fsp.stat(f);
-          results.push({ name: path.basename(f), path: f, size: st.size, dir: root.split('/').pop() });
-        } catch { /* skip */ }
-      }
-    } catch { /* root missing or unreadable */ }
+    // runReadable keeps any files printed before find hit an unreadable subdir.
+    const stdout = await runReadable(
+      'find',
+      [root, '-type', 'f', '-size', `+${n}M`, '-not', '-path', '*/.*', '-print0'],
+      { maxBuffer: 1024 * 1024 * 16 }
+    );
+    // NUL-delimited so filenames containing newlines aren't split into bogus paths.
+    const files = stdout.split('\0').filter(Boolean).slice(0, 300);
+    for (const f of files) {
+      try {
+        const st = await fsp.stat(f);
+        results.push({ name: path.basename(f), path: f, size: st.size, dir: root.split('/').pop() });
+      } catch { /* skip */ }
+    }
   }
   return results.sort((a, b) => b.size - a.size).slice(0, 100);
 }
@@ -333,6 +345,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1040, height: 680, minWidth: 860, minHeight: 560,
     titleBarStyle: 'hiddenInset', backgroundColor: '#0d1117',
+    show: false, // reveal only once the first paint is ready, to avoid a flash
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -340,10 +353,25 @@ function createWindow() {
       sandbox: true,
     },
   });
+  win.once('ready-to-show', () => win.show());
   win.loadFile(path.join(__dirname, 'index.html'));
 }
 
+// Standard macOS menu so the app name, Quit/Hide, copy-paste, and window
+// shortcuts (Cmd+Q, Cmd+W, Cmd+M, Cmd+C/V) all work. Built from roles only —
+// no custom destructive actions live here.
+function buildAppMenu() {
+  const isMac = process.platform === 'darwin';
+  const template = [
+    ...(isMac ? [{ role: 'appMenu' }] : []),
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
+  buildAppMenu();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

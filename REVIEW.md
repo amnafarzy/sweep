@@ -280,3 +280,35 @@ All findings above were implemented in a follow-up commit:
 | **L7** | `sandbox: true` set explicitly in `webPreferences`. `main.js` |
 
 README's safety section updated to describe the allowlist model.
+
+---
+
+## Second pass — additional improvements (2026-06-03)
+
+A further sweep for bugs and polish:
+
+**Backend correctness**
+- **Partial-output recovery (bug):** `du` and `find` exit non-zero the instant they
+  touch an unreadable subpath but still print useful partial output. The old code
+  `catch`-discarded it, so one permission error inside `~/Documents` dropped *every*
+  large file found there, and a partially-readable cache reported `0` (then got
+  filtered out). Added `runReadable()`, which returns the command's stdout even on a
+  non-zero exit; `dirSize` and `scanLargeFiles` now use it. Verified with a test that a
+  command exiting `1` with partial stdout is still parsed correctly.
+
+**Main process**
+- Standard macOS application menu (`appMenu`/`editMenu`/`windowMenu` roles) so Cmd+Q,
+  Cmd+W, Cmd+M and copy/paste work and the app name shows as "Sweep" (`app.setName`).
+- Window uses `show: false` + `ready-to-show` to avoid a flash on launch.
+
+**UX / visual**
+- Smart Scan stat cards are now buttons that jump to the matching view; a Full Disk
+  Access hint also appears on the dashboard when access is off.
+- Confirmation modal: Escape and backdrop-click cancel; the **Cancel** button is focused
+  by default so a stray Enter/Space can't trigger a destructive action.
+- Scan buttons are disabled while a scan is in flight (`busy()` wrapper) to prevent
+  overlapping runs from double-clicks.
+- Login-item toggles gained `aria-label` / `aria-pressed` / tooltips and are disabled
+  during the toggle round-trip.
+- Dark-themed scrollbars, a `prefers-reduced-motion` guard, and hover/active states on
+  the dashboard cards.

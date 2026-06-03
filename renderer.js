@@ -28,15 +28,47 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
 }
 
+// Wrap an async click handler so its button is disabled while it runs — prevents
+// double-clicks kicking off overlapping scans.
+function busy(btn, fn) {
+  return async (...args) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { return await fn(...args); }
+    finally { btn.disabled = false; }
+  };
+}
+
+// Programmatic navigation that reuses the nav buttons (so their lazy-load
+// listeners fire too).
+function showView(view) {
+  const nav = document.querySelector(`.nav-item[data-view="${view}"]`);
+  if (nav) nav.click();
+}
+
 function confirmModal(title, body, okLabel = 'Confirm') {
   return new Promise((resolve) => {
+    const bg = $('#modalBg');
     $('#modalTitle').textContent = title;
     $('#modalBody').textContent = body;
     $('#modalOk').textContent = okLabel;
-    $('#modalBg').hidden = false;
-    const cleanup = (val) => { $('#modalBg').hidden = true; $('#modalOk').onclick = null; $('#modalCancel').onclick = null; resolve(val); };
+    bg.hidden = false;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+    };
+    const cleanup = (val) => {
+      bg.hidden = true;
+      $('#modalOk').onclick = null; $('#modalCancel').onclick = null; bg.onmousedown = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    };
     $('#modalOk').onclick = () => cleanup(true);
     $('#modalCancel').onclick = () => cleanup(false);
+    // Click on the dim backdrop (but not the dialog itself) cancels.
+    bg.onmousedown = (e) => { if (e.target === bg) cleanup(false); };
+    document.addEventListener('keydown', onKey);
+    // Focus the safe default so an inadvertent Enter/Space doesn't confirm.
+    $('#modalCancel').focus();
   });
 }
 
@@ -101,14 +133,14 @@ function wireSelection(listEl, items, toolsEl, selEl, allEl, cleanBtn) {
 
 // ================= CACHES =================
 let cachesData = [], getCachesSel;
-$('#cachesScan').onclick = async () => {
+$('#cachesScan').onclick = busy($('#cachesScan'), async () => {
   const list = $('#cachesList');
   list.innerHTML = '<p class="empty"><span class="spinner"></span>Scanning caches…</p>';
   cachesData = await api.scanCaches();
   buildSelectableList(list, cachesData);
   getCachesSel = wireSelection(list, cachesData, $('#cachesTools'), $('#cachesSel'), $('#cachesAll'), $('#cachesClean'));
   maybeWarnAccess(list);
-};
+});
 $('#cachesClean').onclick = async () => {
   const sel = getCachesSel();
   const total = sel.reduce((s, x) => s + x.size, 0);
@@ -121,14 +153,14 @@ $('#cachesClean').onclick = async () => {
 
 // ================= LARGE FILES =================
 let largeData = [], getLargeSel;
-$('#largeScan').onclick = async () => {
+$('#largeScan').onclick = busy($('#largeScan'), async () => {
   const list = $('#largeList');
   list.innerHTML = '<p class="empty"><span class="spinner"></span>Scanning your folders…</p>';
   largeData = await api.scanLargeFiles(+$('#largeThreshold').value);
   buildSelectableList(list, largeData, { tag: true });
   getLargeSel = wireSelection(list, largeData, $('#largeTools'), $('#largeSel'), $('#largeAll'), $('#largeClean'));
   maybeWarnAccess(list);
-};
+});
 $('#largeClean').onclick = async () => {
   const sel = getLargeSel();
   const total = sel.reduce((s, x) => s + x.size, 0);
@@ -184,7 +216,7 @@ $('#purgeBtn').onclick = async () => {
 };
 
 // ================= LOGIN ITEMS =================
-$('#loginScan').onclick = async () => {
+$('#loginScan').onclick = busy($('#loginScan'), async () => {
   const list = $('#loginList');
   list.innerHTML = '<p class="empty"><span class="spinner"></span>Loading…</p>';
   const items = await api.scanLoginItems();
@@ -197,14 +229,21 @@ $('#loginScan').onclick = async () => {
     const pathDiv = el('div', 'r-path', escapeHtml(it.path));
     info.appendChild(nameDiv); info.appendChild(pathDiv);
     const tog = el('button', 'toggle' + (it.enabled ? ' on' : ''));
+    tog.setAttribute('aria-label', 'Toggle login item ' + it.name);
+    tog.setAttribute('aria-pressed', String(it.enabled));
+    tog.title = it.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable';
     let cur = it.enabled, curPath = it.path;
     tog.onclick = async () => {
+      tog.disabled = true;
       const res = await api.toggleLoginItem(curPath, !cur);
+      tog.disabled = false;
       if (res.ok) {
         cur = !cur;
         curPath = res.path;
         pathDiv.textContent = curPath;
         tog.classList.toggle('on', cur);
+        tog.setAttribute('aria-pressed', String(cur));
+        tog.title = cur ? 'Enabled — click to disable' : 'Disabled — click to enable';
         toast(cur ? 'Enabled — applies at next login' : 'Disabled — applies at next login');
       } else {
         toast('Failed: ' + (res.error || 'unknown error'));
@@ -213,10 +252,10 @@ $('#loginScan').onclick = async () => {
     row.appendChild(info); row.appendChild(tog);
     list.appendChild(row);
   });
-};
+});
 
 // ================= UNINSTALLER =================
-$('#appsScan').onclick = async () => {
+$('#appsScan').onclick = busy($('#appsScan'), async () => {
   const list = $('#appsList');
   list.innerHTML = '<p class="empty"><span class="spinner"></span>Loading apps…</p>';
   const apps = await api.scanApps();
@@ -231,7 +270,7 @@ $('#appsScan').onclick = async () => {
     row.appendChild(info); row.appendChild(btn);
     list.appendChild(row);
   });
-};
+});
 async function uninstall(app) {
   toast('Finding related files…');
   const leftovers = await api.scanAppLeftovers(app.name, app.path);
@@ -265,14 +304,20 @@ $('#smartScanBtn').onclick = async () => {
   const pct = Math.min(100, Math.round((reclaimable / (50 * 1024 * 1024 * 1024)) * 100));
   $('#heroRing').style.setProperty('--deg', (pct * 3.6) + 'deg');
   const stats = [
-    ['System junk', fmtBytes(cacheTotal)],
-    ['In Trash', fmtBytes(trash)],
-    ['Large files', fmtBytes(largeTotal)],
-    ['Downloads', fmtBytes(dl)],
+    ['System junk', fmtBytes(cacheTotal), 'caches'],
+    ['In Trash', fmtBytes(trash), 'trash'],
+    ['Large files', fmtBytes(largeTotal), 'large'],
+    ['Downloads', fmtBytes(dl), 'trash'],
   ];
-  $('#dashStats').innerHTML = stats.map(([k, v]) => `<div class="dash-stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  $('#dashStats').innerHTML = stats
+    .map(([k, v, view]) => `<button class="dash-stat" data-view="${view}"><div class="v">${v}</div><div class="k">${k} ›</div></button>`)
+    .join('');
+  $('#dashStats').querySelectorAll('.dash-stat').forEach((s) => { s.onclick = () => showView(s.dataset.view); });
   btn.disabled = false; btn.textContent = 'Run Smart Scan Again';
   toast('Scan complete');
+  // The dashboard is the first thing users see, so flag missing Full Disk Access here too.
+  try { $('#dashAccess').hidden = !!(await api.checkAccess()).fullDiskAccess; }
+  catch { /* probe failed — leave the hint hidden */ }
 };
 
 // initial loads when a view is first shown

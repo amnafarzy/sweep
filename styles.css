@@ -127,6 +127,8 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
   background: var(--surface); transition: background .1s;
 }
 .row:hover { background: var(--surface-2); }
+.row.selectable { cursor: pointer; }
+.row.selectable:hover { background: var(--line); }
 .row input[type=checkbox] { accent-color: var(--mint); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
 .row .r-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
 .row .r-path { color: var(--text-faint); font-size: 11px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

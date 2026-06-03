@@ -312,3 +312,26 @@ A further sweep for bugs and polish:
   during the toggle round-trip.
 - Dark-themed scrollbars, a `prefers-reduced-motion` guard, and hover/active states on
   the dashboard cards.
+
+---
+
+## Third pass — remaining items (2026-06-03)
+
+- **Login items now take effect immediately.** The toggle still renames the plist (the
+  durable, reversible mechanism that controls load at next login), but it now also runs
+  `launchctl load`/`unload` so the change applies right away. That call is best-effort
+  (`runReadable` swallows its errors), so it can't break the safe rename. UI copy and the
+  toast updated accordingly. *(launchctl behaviour unverified — not on macOS.)*
+- **Row-click selection** in the caches/large-file lists — clicking anywhere on a row
+  toggles its checkbox (with a pointer cursor and hover state), not just the tiny box.
+- **Accessibility:** modal marked `role="dialog"` / `aria-modal` / `aria-labelledby`;
+  toast marked `role="status"` / `aria-live="polite"`; modal restores focus to the
+  triggering element on close.
+
+### Intentionally left as-is (evaluated, not bugs)
+- **Trash size vs. Empty Trash scope:** `getTrashSize` measures `~/.Trash`, while macOS's
+  "Empty Trash" also clears per-volume `.Trashes` on external drives. For the common
+  single-volume case these match; multi-volume trash scanning would read other (possibly
+  network) volumes for little benefit, so it was left out.
+- **`find` depth:** no `-maxdepth` cap was added — a limit would silently miss legitimately
+  deep large files, which is worse than the current (already result-capped) full walk.

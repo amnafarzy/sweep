@@ -49,6 +49,7 @@ function showView(view) {
 function confirmModal(title, body, okLabel = 'Confirm') {
   return new Promise((resolve) => {
     const bg = $('#modalBg');
+    const prevFocus = document.activeElement; // restore focus here when we close
     $('#modalTitle').textContent = title;
     $('#modalBody').textContent = body;
     $('#modalOk').textContent = okLabel;
@@ -60,6 +61,7 @@ function confirmModal(title, body, okLabel = 'Confirm') {
       bg.hidden = true;
       $('#modalOk').onclick = null; $('#modalCancel').onclick = null; bg.onmousedown = null;
       document.removeEventListener('keydown', onKey);
+      if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
       resolve(val);
     };
     $('#modalOk').onclick = () => cleanup(true);
@@ -87,7 +89,7 @@ function buildSelectableList(container, items, { tag } = {}) {
   container.innerHTML = '';
   if (!items.length) { container.appendChild(el('p', 'empty', 'Nothing found — you\'re clean here.')); return; }
   items.forEach((it, idx) => {
-    const row = el('div', 'row');
+    const row = el('div', 'row selectable');
     const cb = el('input'); cb.type = 'checkbox'; cb.dataset.idx = idx;
     const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
     info.style.flex = '1'; info.style.minWidth = '0';
@@ -96,6 +98,13 @@ function buildSelectableList(container, items, { tag } = {}) {
     if (tag && it.dir) row.appendChild(el('div', 'r-tag', it.dir));
     row.appendChild(info);
     row.appendChild(size);
+    // Clicking anywhere on the row toggles its checkbox (the checkbox itself
+    // still works natively — guard against double-toggling).
+    row.onclick = (e) => {
+      if (e.target === cb) return;
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    };
     container.appendChild(row);
   });
 }
@@ -244,7 +253,7 @@ $('#loginScan').onclick = busy($('#loginScan'), async () => {
         tog.classList.toggle('on', cur);
         tog.setAttribute('aria-pressed', String(cur));
         tog.title = cur ? 'Enabled — click to disable' : 'Disabled — click to enable';
-        toast(cur ? 'Enabled — applies at next login' : 'Disabled — applies at next login');
+        toast(cur ? 'Login item enabled' : 'Login item disabled');
       } else {
         toast('Failed: ' + (res.error || 'unknown error'));
       }

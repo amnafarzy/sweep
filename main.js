@@ -324,11 +324,17 @@ ipcMain.handle('toggle:loginItem', async (_e, p, enable) => {
   try {
     const base = p.replace(/\.disabled$/, '');
     assertSafeToRemove(base);
+    // The rename is the durable, reversible mechanism (controls load at next login).
+    // We also ask launchctl to load/unload now so the change takes effect immediately;
+    // that call is best-effort (runReadable swallows its errors — e.g. agent not
+    // currently loaded), so it can never break the safe rename behaviour.
     if (enable && p.endsWith('.disabled')) {
       await fsp.rename(p, base);
+      await runReadable('launchctl', ['load', base]);
       return { ok: true, path: base };
     }
     if (!enable && !p.endsWith('.disabled')) {
+      await runReadable('launchctl', ['unload', p]); // unload before the file moves
       await fsp.rename(p, p + '.disabled');
       return { ok: true, path: p + '.disabled' };
     }

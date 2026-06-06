@@ -25,10 +25,19 @@ async function refreshMem() {
 export function initMemory() {
   $('#memRefresh').onclick = refreshMem;
   $('#purgeBtn').onclick = async () => {
-    toast('Requesting admin rights…');
-    const res = await api.purgeMemory();
-    toast(res.ok ? 'Inactive memory purged' : 'Cancelled or failed');
-    if (res.ok) setTimeout(refreshMem, 800);
+    const btn = $('#purgeBtn');
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    try {
+      toast('Requesting admin rights…');
+      const res = await api.purgeMemory();
+      toast(res.ok ? 'Inactive memory purged' : 'Cancelled or failed');
+      if (res.ok) setTimeout(refreshMem, 800);
+    } finally {
+      delete btn.dataset.busy;
+      btn.disabled = false;
+    }
   };
   // Lazy initial load the first time the view is opened.
   document.querySelector('[data-view="memory"]').addEventListener('click', () => { if (!$('#memBar').children.length) refreshMem(); });

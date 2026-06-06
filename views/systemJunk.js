@@ -103,10 +103,24 @@ export function initSystemJunk() {
     populateSystemJunk(await api.scanSystemJunk());
   });
   $('#cachesClean').onclick = async () => {
-    const sel = getCachesSel();
-    const total = sel.reduce((s, x) => s + x.size, 0);
-    const ok = await confirmModal('Clear system junk?', `Move ${sel.length} item(s) (${fmtBytes(total)}) to the Trash? Apps rebuild or re-download these as needed. Nothing is permanently deleted.`, 'Move to Trash');
-    if (!ok) return;
+    const btn = $('#cachesClean');
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    try {
+      const sel = getCachesSel();
+      const total = sel.reduce((s, x) => s + x.size, 0);
+      const ok = await confirmModal('Clear system junk?', `Move ${sel.length} item(s) (${fmtBytes(total)}) to the Trash? Apps rebuild or re-download these as needed. Nothing is permanently deleted.`, 'Move to Trash');
+      if (!ok) return;
+      // A grouped app item carries several cache subfolders in `paths`; expand those.
+      const res = await api.cleanCaches(sel.flatMap((x) => x.paths || [x.path]));
+      toast(`Cleared ${fmtBytes(total)}${res.failed.length ? `, ${res.failed.length} folder(s) failed` : ''}`);
+      $('#cachesScan').click();
+    } finally {
+      delete btn.dataset.busy;
+      updateJunkSel();
+    }
+  };
     // A grouped app item carries several cache subfolders in `paths`; expand those.
     const res = await api.cleanCaches(sel.flatMap((x) => x.paths || [x.path]));
     toast(`Cleared ${fmtBytes(total)}${res.failed.length ? `, ${res.failed.length} folder(s) failed` : ''}`);

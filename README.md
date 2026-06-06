@@ -33,6 +33,19 @@ npm start
 
 That launches the app in development mode.
 
+## Run the tests
+
+The pure logic (the path-safety allowlist, the command-output parsers, the
+leftover matcher, and byte formatting) lives in `lib/` and is covered by unit
+tests using Node's built-in runner — no extra dependencies:
+
+```bash
+npm test          # runs `node --test`
+```
+
+These run on every push/PR via GitHub Actions on macOS and Ubuntu
+(`.github/workflows/test.yml`).
+
 ## Build a real .app / .dmg (optional)
 
 ```bash
@@ -48,7 +61,7 @@ The packaged app appears in `dist/`. On first launch, macOS Gatekeeper may warn 
 
 ## Notes
 
-- Tested logic against macOS paths; the destructive operations all route through `assertSafeToRemove()` in `main.js`.
-- Want a feature CleanMyMac has that's missing? The code is small and readable — `main.js` is all the system logic, `renderer.js` is all the UI behavior.
+- The destructive operations all route through `assertSafeToRemove()` (now in `lib/safety.js`), which is exercised directly by the test suite.
+- Want a feature CleanMyMac has that's missing? The code is small and readable — `main.js` wires up the Electron/IPC/filesystem side, `lib/` holds the pure, unit-tested logic, and `renderer.js` is all the UI behavior.
 
 MIT licensed. Do whatever you want with it.

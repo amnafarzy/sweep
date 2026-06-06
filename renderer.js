@@ -11,12 +11,9 @@ if (!api) {
 }
 
 // ---- helpers ----
-function fmtBytes(n) {
-  if (!n || n < 1) return '0 B';
-  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(n) / Math.log(1024));
-  return (n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + u[i];
-}
+// fmtBytes is defined in lib/format.js (loaded just before this script) so the
+// same implementation is shared with — and unit-tested by — the Node test suite.
+const { fmtBytes } = window.SweepFormat;
 function $(s) { return document.querySelector(s); }
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 

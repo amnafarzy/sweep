@@ -5,6 +5,10 @@ const fsp = require('fs/promises');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
+const { APP_BUNDLE_RE, ALLOWED_ROOTS, isStrictlyInside, assertSafeToRemove } = require('./lib/safety');
+const { parseDuKb, splitNul, parseVmStat } = require('./lib/parse');
+const { leftoverMatches } = require('./lib/match');
+
 const run = promisify(execFile); // runs a binary directly — NO shell, so no metacharacter injection
 const HOME = os.homedir();
 
@@ -26,54 +30,12 @@ async function runReadable(cmd, args, opts) {
 // ---------------------------------------------------------------------------
 // SAFETY GUARDS
 //
-// Allowlist model: a path may only be trashed if it sits *strictly inside* one
-// of the directories Sweep actually scans, or is a single /Applications/*.app
-// bundle. Everything else is refused — including the allowed roots themselves
-// (so we never trash all of ~/Library/Caches, ~/Documents, etc.) and every
-// protected system path.
-//
-// This fails CLOSED: a path we don't recognise is rejected, not allowed. It also
-// closes the case-sensitivity gap of a denylist — macOS's default volume is
-// case-insensitive, so a denylist keyed on exact casing ("/Library") could be
-// slipped past with "/library". An allowlist of known-cased roots instead
-// rejects any path whose casing doesn't match a root we scan, which is the safe
-// outcome (a real path from a scan always has the correct casing).
+// The allowlist model and its rationale live in ./lib/safety.js (pure logic, so
+// it can be unit-tested without Electron): a path may only be trashed if it sits
+// *strictly inside* one of the directories Sweep scans, or is a single
+// /Applications/*.app bundle. `assertSafeToRemove`, `ALLOWED_ROOTS`,
+// `isStrictlyInside`, and `APP_BUNDLE_RE` are imported at the top of this file.
 // ---------------------------------------------------------------------------
-const APP_BUNDLE_RE = /^\/Applications\/[^/]+\.app$/;
-
-const ALLOWED_ROOTS = [
-  path.join(HOME, 'Library', 'Caches'),
-  path.join(HOME, 'Library', 'Application Support'),
-  path.join(HOME, 'Library', 'Preferences'),
-  path.join(HOME, 'Library', 'Logs'),
-  path.join(HOME, 'Library', 'Containers'),
-  path.join(HOME, 'Library', 'Saved Application State'),
-  path.join(HOME, 'Library', 'HTTPStorages'),
-  path.join(HOME, 'Library', 'LaunchAgents'),
-  path.join(HOME, 'Library', 'Developer'),        // Xcode DerivedData / DeviceSupport / simulator caches
-  path.join(HOME, 'Library', 'Group Containers'), // sandboxed app group data (we only ever target known media caches inside)
-  path.join(HOME, 'Downloads'),
-  path.join(HOME, 'Desktop'),
-  path.join(HOME, 'Documents'),
-  path.join(HOME, 'Movies'),
-  path.join(HOME, 'Music'),
-  path.join(HOME, 'Pictures'),
-];
-
-// Strictly inside = a descendant of `parent`, never `parent` itself.
-function isStrictlyInside(parent, child) {
-  const rel = path.relative(parent, child);
-  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
-
-function assertSafeToRemove(p) {
-  if (!p || typeof p !== 'string') throw new Error('Invalid path');
-  const resolved = path.resolve(p);
-  if (APP_BUNDLE_RE.test(resolved)) return resolved;            // a single app bundle
-  if (ALLOWED_ROOTS.some((root) => isStrictlyInside(root, resolved))) return resolved;
-  throw new Error(`Refusing to operate on a path outside Sweep's allowed areas: ${resolved}`);
-}
-
 async function moveToTrash(p) {
   const safe = assertSafeToRemove(p);
   await shell.trashItem(safe);
@@ -97,8 +59,7 @@ async function dirSize(p) {
   // `du -sk` prints "<kb>\t<path>"; even on a partial (permission-limited) walk
   // it still reports a running total, which runReadable preserves.
   const stdout = await runReadable('du', ['-sk', p]);
-  const kb = parseInt(stdout.split('\t')[0], 10);
-  return Number.isFinite(kb) ? kb * 1024 : 0;
+  return parseDuKb(stdout);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +145,7 @@ async function listAppMediaCaches() {
       'find', [root, '-type', 'd', '-path', rule.findPath, '-prune', '-print0'],
       { maxBuffer: 1024 * 1024 }
     );
-    const dirs = stdout.split('\0').filter(Boolean);
+    const dirs = splitNul(stdout);
     const sized = await mapLimit(dirs, 4, async (d) => (
       { name: rule.label, path: d, size: await dirSize(d), category: 'App media caches' }
     ));
@@ -232,7 +193,7 @@ async function listAppSupportCaches() {
     'find', [base, '-maxdepth', '5', '-type', 'd', '(', ...nameArgs, ')', '-prune', '-print0'],
     { maxBuffer: 1024 * 1024 * 8 }
   );
-  const dirs = stdout.split('\0').filter(Boolean);
+  const dirs = splitNul(stdout);
   const groups = new Map(); // app folder name -> Set of cache dir paths
   for (const d of dirs) {
     const app = path.relative(base, d).split(path.sep)[0];
@@ -267,7 +228,7 @@ async function listInstallers() {
       'find', [root, '-maxdepth', '2', '-type', 'f', '(', '-iname', '*.dmg', '-o', '-iname', '*.pkg', ')', '-print0'],
       { maxBuffer: 1024 * 1024 }
     );
-    for (const f of stdout.split('\0').filter(Boolean)) {
+    for (const f of splitNul(stdout)) {
       try {
         const st = await fsp.stat(f);
         out.push({ name: path.basename(f), path: f, size: st.size, category: 'Installers & disk images' });
@@ -291,21 +252,9 @@ async function scanSystemJunk() {
 async function getMemory() {
   try {
     const { stdout } = await run('vm_stat', []);
-    const pageMatch = stdout.match(/page size of (\d+) bytes/);
-    const pageSize = pageMatch ? parseInt(pageMatch[1], 10) : 4096;
-    const get = (re) => { const m = stdout.match(re); return m ? parseInt(m[1], 10) : 0; };
-    const free = get(/Pages free:\s+(\d+)/) * pageSize;
-    const active = get(/Pages active:\s+(\d+)/) * pageSize;
-    const inactive = get(/Pages inactive:\s+(\d+)/) * pageSize;
-    const wired = get(/Pages wired down:\s+(\d+)/) * pageSize;
-    const compressed = get(/Pages occupied by compressor:\s+(\d+)/) * pageSize;
-    const total = os.totalmem();
-    // Approximation for an at-a-glance breakdown (not an exact Activity Monitor
-    // match): "cached" is everything physical not otherwise accounted for, which
-    // folds in `inactive` and file-backed/speculative pages. `inactive` is parsed
-    // and returned for callers that want it, though the UI rolls it into "cached".
-    const cached = Math.max(0, total - active - wired - compressed - free);
-    return { total, free, active, inactive, wired, compressed, cached };
+    // parseVmStat (lib/parse.js) turns the raw output into a byte-denominated
+    // breakdown; see there for the "cached" approximation rationale.
+    return parseVmStat(stdout, os.totalmem());
   } catch {
     const total = os.totalmem();
     const free = os.freemem();
@@ -326,7 +275,7 @@ async function scanLargeFiles(minMB) {
       { maxBuffer: 1024 * 1024 * 16 }
     );
     // NUL-delimited so filenames containing newlines aren't split into bogus paths.
-    const files = stdout.split('\0').filter(Boolean).slice(0, 300);
+    const files = splitNul(stdout).slice(0, 300);
     for (const f of files) {
       try {
         const st = await fsp.stat(f);
@@ -403,29 +352,17 @@ async function getBundleId(appPath) {
   }
 }
 
-// Names too short or too generic to be a reliable signal on their own — matching
-// these by name alone would sweep up unrelated vendors' files (e.g. an app called
-// "Google" matching the shared ~/Library/Application Support/Google).
-const GENERIC_NAMES = new Set([
-  'app', 'apps', 'player', 'update', 'updater', 'helper', 'agent', 'service',
-  'music', 'tv', 'notes', 'mail', 'calendar', 'photos', 'home', 'store', 'books',
-  'news', 'stocks', 'clock', 'files', 'preview', 'pro', 'lite', 'free', 'beta',
-  'google', 'microsoft', 'adobe', 'apple', 'data', 'cache', 'common', 'shared',
-]);
-
 // Precise leftover finder: bundle identifier is the primary (high-confidence)
 // signal. App-name matching is only used as a fallback and is deliberately
 // conservative — never a loose "*name*" substring, and never for short or
-// generic names — so it can't sweep up files belonging to other apps.
+// generic names — so it can't sweep up files belonging to other apps. The match
+// rule itself lives in ./lib/match.js (leftoverMatches) so it can be unit-tested.
 async function findAppLeftovers(appName, appPath) {
   // Defense-in-depth: appPath arrives over IPC. In normal flow it comes from the
   // /Applications listing, but constrain it before feeding it to PlistBuddy.
   if (!APP_BUNDLE_RE.test(path.resolve(String(appPath || '')))) return [];
 
   const bundleId = (await getBundleId(appPath)).toLowerCase();
-  const nameLc = String(appName).toLowerCase();
-  // A bare app name is only trustworthy if it's specific enough.
-  const nameUsable = nameLc.length >= 4 && !GENERIC_NAMES.has(nameLc);
   const searchDirs = [
     path.join(HOME, 'Library', 'Application Support'),
     path.join(HOME, 'Library', 'Caches'),
@@ -435,20 +372,12 @@ async function findAppLeftovers(appName, appPath) {
     path.join(HOME, 'Library', 'Saved Application State'),
     path.join(HOME, 'Library', 'HTTPStorages'),
   ];
-  const matches = (base) => {
-    const b = base.toLowerCase();
-    if (bundleId && b.includes(bundleId)) return true;       // com.vendor.app(.plist/.savedState/…)
-    if (!nameUsable) return false;                            // name too weak to trust alone
-    if (b === nameLc) return true;                            // "Slack"
-    if (b.startsWith(nameLc + '.') || b.startsWith(nameLc + ' ')) return true; // "Slack.plist", "Slack Helper"
-    return false;
-  };
   const found = new Map();
   for (const d of searchDirs) {
     let entries = [];
     try { entries = await fsp.readdir(d, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
-      if (!matches(e.name)) continue;
+      if (!leftoverMatches(e.name, appName, bundleId)) continue;
       const full = path.join(d, e.name);
       if (!found.has(full)) found.set(full, await dirSize(full));
     }

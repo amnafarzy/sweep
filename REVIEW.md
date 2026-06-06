@@ -335,3 +335,51 @@ A further sweep for bugs and polish:
   network) volumes for little benefit, so it was left out.
 - **`find` depth:** no `-maxdepth` cap was added — a limit would silently miss legitimately
   deep large files, which is worse than the current (already result-capped) full walk.
+
+---
+
+## Fourth pass — testability refactor + real tests (2026-06-06)
+
+The earlier passes referenced test harnesses that were never committed and there was no
+`npm test`. This pass makes the testing real, **without changing app behavior**.
+
+**Refactor (behavior-preserving):** the pure, environment-free logic was lifted out of
+`main.js` into small importable modules. Anything needing Electron/`fs` stays in `main.js`,
+which now imports from these:
+
+| Module | Exports | Was |
+|--------|---------|-----|
+| `lib/safety.js` | `assertSafeToRemove`, `isStrictlyInside`, `ALLOWED_ROOTS`, `APP_BUNDLE_RE`, `HOME` | inline SAFETY GUARDS block |
+| `lib/parse.js` | `parseDuKb`, `splitNul`, `parseVmStat` | inline parsing in `dirSize`, `getMemory`, and the four `find … -print0` callers |
+| `lib/match.js` | `leftoverMatches`, `GENERIC_NAMES` | the `matches()` closure + `GENERIC_NAMES` inside `findAppLeftovers` |
+| `lib/format.js` | `fmtBytes` (UMD: `require()` in Node, `window.SweepFormat` in the renderer) | a private copy in `renderer.js` |
+
+`renderer.js` now consumes the shared `fmtBytes` (one source of truth) via a new
+`<script src="lib/format.js">` tag added before `renderer.js` in `index.html`. The function
+body is byte-for-byte the same, so rendered output is unchanged. The CSP (`script-src 'self'`)
+already permits the local script.
+
+**Tests** (`test/*.test.js`, run with Node's built-in `node:test`/`node:assert`, no new deps):
+- `safety.test.js` (9 cases): accepts paths strictly inside every `ALLOWED_ROOT` and a
+  single `/Applications/*.app`; rejects each root itself, `/`, `HOME`, `/System`, `/Library`,
+  `..`-traversal that escapes, wrong-case variants, empty/non-string input, and
+  `/Applications` paths that aren't a lone `*.app`.
+- `parse.test.js`: `parseDuKb` (incl. unparseable→0), `splitNul` (incl. a filename
+  containing a newline staying intact), and `parseVmStat` against a captured sample
+  (page-size parsing, per-field bytes, default-page fallback, cached-clamp-to-0).
+- `match.test.js`: bundle-id match (incl. winning over a generic name), exact/prefixed
+  name match, rejection of generic names, names < 4 chars, and unrelated/substring names.
+- `format.test.js`: `fmtBytes` edge cases (0, <1, negatives/NaN/undefined, sub-KB no-decimal,
+  exact KB/MB/GB/TB boundaries, one-decimal rounding).
+
+`"test": "node --test"` added to `package.json`. **All 25 tests pass locally** (run on this
+machine, so `lib/safety` and `lib/format` ran for real; macOS-only *commands* like `vm_stat`
+are still tested via captured-string parsing, not by spawning them).
+
+**CI:** `.github/workflows/test.yml` runs `npm ci && npm test` on `macos-latest` and
+`ubuntu-latest` for pushes to `main` and all PRs.
+
+*Could not verify at runtime (not exercised here):* the Electron app still launching and the
+renderer picking up `window.SweepFormat` — this needs a macOS GUI session. The change is a
+mechanical extract-and-reuse with an identical `fmtBytes` body and an added local
+`<script>` tag, so the risk is low, but the live renderer load was not run.

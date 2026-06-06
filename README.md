@@ -62,6 +62,10 @@ The packaged app appears in `dist/`. On first launch, macOS Gatekeeper may warn 
 ## Notes
 
 - The destructive operations all route through `assertSafeToRemove()` (now in `lib/safety.js`), which is exercised directly by the test suite.
-- Want a feature CleanMyMac has that's missing? The code is small and readable — `main.js` wires up the Electron/IPC/filesystem side, `lib/` holds the pure, unit-tested logic, and `renderer.js` is all the UI behavior.
+- Want a feature CleanMyMac has that's missing? The code is small and readable and split for maintainability:
+  - `main.js` owns the Electron app/window/menu lifecycle and registers the IPC handlers.
+  - `scanners/` holds one module per feature (`systemJunk`, `largeFiles`, `memory`, `loginItems`, `apps`, `access`); `lib/exec.js` holds the shared process-spawning + sizing helpers they import.
+  - `lib/` holds the pure, unit-tested logic (path-safety allowlist, output parsers, leftover matcher, byte formatting).
+  - The renderer is ES modules: `renderer.js` is the entry that wires navigation and initializes each view; `ui/` holds shared DOM/UI helpers and `views/` holds one module per view.
 
 MIT licensed. Do whatever you want with it.

@@ -383,3 +383,65 @@ are still tested via captured-string parsing, not by spawning them).
 renderer picking up `window.SweepFormat` — this needs a macOS GUI session. The change is a
 mechanical extract-and-reuse with an identical `fmtBytes` body and an added local
 `<script>` tag, so the risk is low, but the live renderer load was not run.
+
+---
+
+## Fifth pass — modularize main.js and renderer.js (2026-06-06)
+
+Both source files had grown into single large files. This pass splits each along the
+boundaries laid out in the task, with **no behavior change** — same IPC channels, same
+preload surface, same UI, same safety invariants. The split is purely structural.
+
+**Main process** — `main.js` now owns only the Electron app/window/menu lifecycle, the
+`moveToTrash`/`trashMany` trash chokepoint, and the IPC registrations, which delegate to:
+
+| Module | Exports | Imports |
+|--------|---------|---------|
+| `lib/exec.js` | `run`, `runReadable`, `mapLimit`, `dirSize`, `HOME`, `LIB` | `lib/parse` (`parseDuKb`) |
+| `scanners/systemJunk.js` | `scanSystemJunk` (+ all the curated rules/helpers) | `lib/exec`, `lib/parse` |
+| `scanners/largeFiles.js` | `scanLargeFiles` | `lib/exec`, `lib/parse` |
+| `scanners/memory.js` | `getMemory` | `lib/exec`, `lib/parse` |
+| `scanners/loginItems.js` | `listLoginItems`, `toggleLoginItem` | `lib/exec`, `lib/safety` |
+| `scanners/apps.js` | `listInstalledApps`, `findAppLeftovers` | `lib/exec`, `lib/safety`, `lib/match` |
+| `scanners/access.js` | `hasFullDiskAccess` | `lib/exec` |
+
+`lib/exec.js` is now the **only** module that touches `child_process`, so the "binary +
+arg array, never a shell" invariant lives in one place. The two destructive handlers that
+accept a path still validate in the main process: `toggle:loginItem` re-checks
+`isStrictlyInside(LaunchAgents, …)` + `assertSafeToRemove` inside `scanners/loginItems.js`,
+and `scan:appLeftovers` re-checks `APP_BUNDLE_RE` inside `scanners/apps.js` — both run in
+the main process (these modules are `require`d by `main.js`, not the preload). The trivial
+`scan:trash` / `scan:downloads` size queries stay inline in `main.js` as one-liners over
+`dirSize`. `assertSafeToRemove` remains the single guard every trash path passes through.
+
+**Renderer** — `renderer.js` is now an ES-module entry (`<script type="module">`) that
+checks the preload bridge, wires the sidebar nav, and calls each view's `init*()`:
+
+| Module | Role |
+|--------|------|
+| `ui/api.js` | the `window.sweep` bridge |
+| `ui/dom.js` | `$`, `el`, `fmtBytes`, `escapeHtml`, `toast`, `busy`, `confirmModal`, `showView` |
+| `ui/list.js` | `buildSelectableList`, `wireSelection`, `maybeWarnAccess` |
+| `views/{dashboard,systemJunk,largeFiles,trash,memory,loginItems,uninstaller}.js` | one per view |
+
+The `fmtBytes` source of truth is unchanged: `lib/format.js` stays a classic `<script>`
+that runs during parse (setting `window.SweepFormat`) before the deferred renderer module
+reads it. **CSP unchanged** (`script-src 'self'`): module scripts and their relative
+imports are all same-origin.
+
+**Verified at runtime on macOS (this pass *was* run on a Mac):**
+- `npm test` — 25/25 pass, before and after.
+- A probe confirmed Electron 31 loads `<script type="module">` and relative `import`s over
+  `file://` under `script-src 'self'` (the usual file:// module CORS gotcha does **not**
+  bite here with `loadFile`).
+- A headless harness loaded the **real** `index.html` + `preload.js` with the real
+  read-only scanners wired and **every destructive channel stubbed** (nothing was trashed),
+  then drove the UI: the preload bridge and `window.SweepFormat.fmtBytes` resolve; all
+  seven nav views activate; Smart Scan completes (hero total `14.8 GB`, 4 stat cards, 100
+  system-junk rows, large-files list built); Login Items lists 5 agents; Uninstaller lists
+  23 apps; the memory bar renders 5 segments; and "select all" in System Junk reports
+  `14.8 GB selected` and enables the clean button. **No renderer console errors.**
+
+*Not exercised:* the actual destructive paths (trash/empty/purge/login-toggle) were stubbed
+during verification to avoid moving real files — their code is byte-for-byte the pre-split
+logic, just relocated, and `assertSafeToRemove` is still covered by the unit tests.

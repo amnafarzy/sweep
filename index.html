@@ -153,7 +153,11 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
+  <!-- lib/format.js is a classic script so it runs during parse (setting
+       window.SweepFormat) before the deferred renderer module evaluates and
+       reads fmtBytes from it. The renderer is an ES module that imports ui/ and
+       views/ — all same-origin, so CSP `script-src 'self'` permits them. -->
   <script src="lib/format.js"></script>
-  <script src="renderer.js"></script>
+  <script type="module" src="renderer.js"></script>
 </body>
 </html>

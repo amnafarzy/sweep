@@ -21,12 +21,22 @@ export function initLargeFiles() {
     populateLargeFiles(await api.scanLargeFiles(+$('#largeThreshold').value));
   });
   $('#largeClean').onclick = async () => {
-    const sel = getLargeSel();
-    const total = sel.reduce((s, x) => s + x.size, 0);
-    const ok = await confirmModal('Move files to Trash?', `Move ${sel.length} file(s) (${fmtBytes(total)}) to the Trash? You can restore them from the Trash if needed.`, 'Move to Trash');
-    if (!ok) return;
-    const res = await api.trashFiles(sel.map((x) => x.path));
-    toast(`Moved ${res.ok.length} file(s) to Trash${res.failed.length ? `, ${res.failed.length} failed` : ''}`);
-    $('#largeScan').click();
+    const btn = $('#largeClean');
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    try {
+      const sel = getLargeSel();
+      const total = sel.reduce((s, x) => s + x.size, 0);
+      const ok = await confirmModal('Move files to Trash?', `Move ${sel.length} file(s) (${fmtBytes(total)}) to the Trash? You can restore them from the Trash if needed.`, 'Move to Trash');
+      if (!ok) return;
+      const res = await api.trashFiles(sel.map((x) => x.path));
+      toast(`Moved ${res.ok.length} file(s) to Trash${res.failed.length ? `, ${res.failed.length} failed` : ''}`);
+      $('#largeScan').click();
+    } finally {
+      delete btn.dataset.busy;
+      btn.disabled = getLargeSel().length === 0;
+    }
+  };
   };
 }

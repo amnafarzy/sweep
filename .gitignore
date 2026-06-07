@@ -3,11 +3,15 @@ node_modules/
 
 # Build output / packaged apps
 dist/
-build/
 out/
 *.dmg
 *.app
 *.zip
+
+# Packaging resources live in build/ and ARE committed (icon.png, icon.icns,
+# dmg-background*.png, make-icon.js, README.md). Only the regenerable iconset
+# intermediate is ignored — `node build/make-icon.js` recreates it.
+build/icon.iconset/
 
 # Logs
 logs/

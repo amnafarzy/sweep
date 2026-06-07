@@ -19,7 +19,18 @@
     "productName": "Sweep",
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
       "target": ["dmg"]
+    },
+    "dmg": {
+      "icon": "build/icon.icns",
+      "background": "build/dmg-background.png",
+      "window": { "width": 540, "height": 380 },
+      "iconSize": 96,
+      "contents": [
+        { "x": 150, "y": 200, "type": "file" },
+        { "x": 390, "y": 200, "type": "link", "path": "/Applications" }
+      ]
     }
   }
 }

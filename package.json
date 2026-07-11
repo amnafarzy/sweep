@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test",
+    "test": "node --test && npm run check:renderer",
+    "check:renderer": "node scripts/check-renderer.mjs",
     "dist": "electron-builder --mac"
   },
   "author": "",

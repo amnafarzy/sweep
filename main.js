@@ -12,7 +12,7 @@ const { scanSystemJunk } = require('./scanners/systemJunk');
 const { scanLargeFiles } = require('./scanners/largeFiles');
 const { getMemory } = require('./scanners/memory');
 const { listLoginItems, toggleLoginItem } = require('./scanners/loginItems');
-const { listInstalledApps, getAppsInfo, findAppLeftovers } = require('./scanners/apps');
+const { listInstalledApps, getAppsInfo, findAppLeftovers, isAppRunning, quitApp } = require('./scanners/apps');
 const { hasFullDiskAccess } = require('./scanners/access');
 
 app.setName('Sweep'); // shown in the macOS app menu / "About Sweep" / "Quit Sweep"
@@ -58,6 +58,8 @@ ipcMain.handle('scan:appsInfo', (e, paths) => getAppsInfo(paths, (info) => {
   if (!e.sender.isDestroyed()) e.sender.send('apps:info', info);
 }));
 ipcMain.handle('scan:appLeftovers', (_e, name, appPath) => findAppLeftovers(name, appPath));
+ipcMain.handle('scan:appRunning', (_e, appPath) => isAppRunning(appPath));
+ipcMain.handle('app:quit', (_e, appPath) => quitApp(appPath));
 ipcMain.handle('scan:access', async () => ({ fullDiskAccess: await hasFullDiskAccess() }));
 
 ipcMain.handle('clean:caches', (_e, paths) => trashMany(paths));

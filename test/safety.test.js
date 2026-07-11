@@ -46,6 +46,31 @@ test('rejects each allowed root itself (never trash the whole folder)', () => {
   }
 });
 
+test('accepts leftovers inside the uninstaller\'s newer user-Library roots', () => {
+  for (const p of [
+    path.join(HOME, 'Library', 'Application Scripts', 'com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'WebKit', 'com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'Cookies', 'com.tinyspeck.slackmacgap.binarycookies'),
+    path.join(HOME, 'Library', 'Group Containers', 'AB12CD34EF.com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'LaunchAgents', 'com.tinyspeck.slackmacgap.plist'),
+    // crash reports live under Logs, which is already an allowed root
+    path.join(HOME, 'Library', 'Logs', 'DiagnosticReports', 'Slack_2026-05-01.crash'),
+  ]) {
+    assert.equal(assertSafeToRemove(p), p);
+  }
+});
+
+test('system-level /Library leftovers stay read-only (never trashable)', () => {
+  for (const p of [
+    '/Library/Application Support/Slack',
+    '/Library/LaunchAgents/com.tinyspeck.slackmacgap.plist',
+    '/Library/LaunchDaemons/com.docker.vmnetd.plist',
+    '/Library/Application Support', '/Library/LaunchAgents', '/Library/LaunchDaemons',
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
 test('rejects protected system and home paths', () => {
   for (const p of ['/', HOME, '/System', '/Library', '/usr', '/etc',
                    path.join(HOME, 'Library')]) {

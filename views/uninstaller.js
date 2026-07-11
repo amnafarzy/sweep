@@ -24,8 +24,18 @@ function lastUsedText(app) {
 
 async function uninstall(app) {
   try {
+    // Trashing a running app fails, so offer to quit it first.
+    if (await api.isAppRunning(app.path)) {
+      const quit = await confirmModal(`${app.name} is running`,
+        `A running app can't be moved to the Trash. Quit ${app.name} now and continue uninstalling?`,
+        'Quit app');
+      if (!quit) return;
+      toast(`Quitting ${app.name}…`);
+      const q = await api.quitApp(app.path);
+      if (!q.ok) { toast(`${app.name} is still running — quit it manually, then try again.`); return; }
+    }
     toast('Finding related files…');
-    const [leftovers, appSize] = await Promise.all([
+    const [{ leftovers, systemLeftovers }, appSize] = await Promise.all([
       api.scanAppLeftovers(app.name, app.path),
       app.size != null ? app.size : api.dirSize(app.path),
     ]);
@@ -34,8 +44,13 @@ async function uninstall(app) {
     // List EVERY path that will be trashed — never hide items the user is approving.
     // The modal body scrolls, so a long list stays reviewable.
     const list = all.map((x) => '• ' + x.path).join('\n');
+    // System-level matches are report-only: shown so the user knows they exist,
+    // never passed to trashFiles (and lib/safety.js would refuse them anyway).
+    const sysNote = systemLeftovers.length
+      ? `\n\nAlso found at system level — requires admin, not removed automatically:\n${systemLeftovers.map((x) => '• ' + x.path).join('\n')}`
+      : '';
     const ok = await confirmModal(`Uninstall ${app.name}?`,
-      `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash — all ${all.length} item(s) are listed below. Everything is recoverable from the Trash.\n\n${list}`,
+      `This moves the app and ${leftovers.length} related file(s) (${fmtBytes(total)}) to the Trash — all ${all.length} item(s) are listed below. Everything is recoverable from the Trash.\n\n${list}${sysNote}`,
       'Move all to Trash');
     if (!ok) return;
     const res = await api.trashFiles(all.map((x) => x.path));

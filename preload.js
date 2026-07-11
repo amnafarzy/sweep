@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('sweep', {
     return () => ipcRenderer.removeListener('apps:info', listener);
   },
   scanAppLeftovers: (name, appPath) => ipcRenderer.invoke('scan:appLeftovers', name, appPath),
+  isAppRunning: (appPath) => ipcRenderer.invoke('scan:appRunning', appPath),
+  quitApp: (appPath) => ipcRenderer.invoke('app:quit', appPath),
   checkAccess: () => ipcRenderer.invoke('scan:access'),
 
   cleanCaches: (paths) => ipcRenderer.invoke('clean:caches', paths),

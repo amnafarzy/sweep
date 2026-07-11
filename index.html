@@ -48,6 +48,7 @@
             <h1>Smart Scan</h1>
             <p class="lead">Scan every category at once and see what you can safely clean.</p>
             <button class="btn btn-primary" id="smartScanBtn">Run Smart Scan</button>
+            <p class="scan-progress" id="smartProgress" role="status" aria-live="polite" hidden></p>
             <div class="dash-stats" id="dashStats"></div>
             <p class="hint dash-access" id="dashAccess" hidden>⚠️ Full Disk Access is off — totals may be understated. Grant it in System Settings → Privacy &amp; Security → Full Disk Access.</p>
           </div>
@@ -60,6 +61,7 @@
           <div><h1>System Junk</h1><p class="lead">Caches, logs &amp; re-downloadable media from across your system — including sandboxed apps and big media caches. Safe to clear; apps rebuild or refetch them.</p></div>
           <button class="btn" id="cachesScan">Scan</button>
         </header>
+        <p class="scan-progress" id="cachesProgress" role="status" aria-live="polite" hidden></p>
         <div class="list-tools" id="cachesTools" hidden>
           <label class="chk"><input type="checkbox" id="cachesAll" /> Select all</label>
           <span class="selsize" id="cachesSel">0 B selected</span>
@@ -82,6 +84,7 @@
             <button class="btn" id="largeScan">Scan</button>
           </div>
         </header>
+        <p class="scan-progress" id="largeProgress" role="status" aria-live="polite" hidden></p>
         <div class="list-tools" id="largeTools" hidden>
           <label class="chk"><input type="checkbox" id="largeAll" /> Select all</label>
           <span class="selsize" id="largeSel">0 B selected</span>

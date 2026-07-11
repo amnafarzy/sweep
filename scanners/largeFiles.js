@@ -10,17 +10,21 @@ const fsp = require('fs/promises');
 const { runReadable, HOME } = require('../lib/exec');
 const { splitNul } = require('../lib/parse');
 
-async function scanLargeFiles(minMB) {
+// `signal` cancels between roots and kills an in-flight find; `onProgress`
+// fires as each root finishes. Both optional.
+async function scanLargeFiles(minMB, { signal, onProgress } = {}) {
   const n = Number.isFinite(+minMB) && +minMB > 0 ? Math.floor(+minMB) : 100;
   const roots = ['Downloads', 'Desktop', 'Documents', 'Movies', 'Music', 'Pictures']
     .map((d) => path.join(HOME, d));
   const results = [];
+  let done = 0;
   for (const root of roots) {
+    signal?.throwIfAborted();
     // runReadable keeps any files printed before find hit an unreadable subdir.
     const stdout = await runReadable(
       'find',
       [root, '-type', 'f', '-size', `+${n}M`, '-not', '-path', '*/.*', '-print0'],
-      { maxBuffer: 1024 * 1024 * 16 }
+      { maxBuffer: 1024 * 1024 * 16, signal }
     );
     // NUL-delimited so filenames containing newlines aren't split into bogus paths.
     const files = splitNul(stdout).slice(0, 300);
@@ -30,6 +34,8 @@ async function scanLargeFiles(minMB) {
         results.push({ name: path.basename(f), path: f, size: st.size, dir: root.split('/').pop() });
       } catch { /* skip */ }
     }
+    done += 1;
+    onProgress?.({ phase: path.basename(root), done, total: roots.length });
   }
   return results.sort((a, b) => b.size - a.size).slice(0, 100);
 }

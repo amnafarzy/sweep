@@ -39,15 +39,15 @@ const CHILD_JUNK = [
     warn: 'Device backup — deleting it removes your ability to restore that device' },
 ];
 
-async function listChildJunk({ cat, base, exclude, warn }) {
+async function listChildJunk({ cat, base, exclude, warn }, signal) {
   let entries = [];
   try { entries = await fsp.readdir(base, { withFileTypes: true }); } catch { return []; }
   const skip = new Set(exclude || []);
   const kids = entries.filter((e) => (e.isDirectory() || e.isFile()) && !skip.has(e.name));
   const sized = await mapLimit(kids, 8, async (e) => {
     const full = path.join(base, e.name);
-    return { name: e.name, path: full, size: await dirSize(full), category: cat, ...(warn ? { warn } : {}) };
-  });
+    return { name: e.name, path: full, size: await dirSize(full, signal), category: cat, ...(warn ? { warn } : {}) };
+  }, signal);
   return sized.filter((x) => x.size > 0);
 }
 
@@ -62,22 +62,22 @@ const SINGLE_JUNK = [
   { cat: 'Dev tool caches', name: 'CocoaPods cache', p: path.join(LIB, 'Caches', 'CocoaPods') },
 ];
 
-async function listSingleJunk() {
+async function listSingleJunk(signal) {
   const sized = await mapLimit(SINGLE_JUNK, 4, async ({ cat, name, p }) => (
-    { name, path: p, size: await dirSize(p), category: cat }
-  ));
+    { name, path: p, size: await dirSize(p, signal), category: cat }
+  ), signal);
   return sized.filter((x) => x.size > 0);
 }
 
 // ~/.cache (the XDG cache dir many CLI tools share) is itself an allowed root,
 // and roots are never trashable — so the row shows ~/.cache but carries its
 // children in `paths`, the same expand-on-clean shape the grouped app rows use.
-async function listDotCache() {
+async function listDotCache(signal) {
   const base = path.join(HOME, '.cache');
   let entries = [];
   try { entries = await fsp.readdir(base); } catch { return []; }
   if (!entries.length) return [];
-  const size = await dirSize(base);
+  const size = await dirSize(base, signal);
   if (size <= 0) return [];
   return [{
     name: 'User cache dir (~/.cache)', path: base,
@@ -89,7 +89,7 @@ async function listDotCache() {
 // Sandboxed apps keep a private cache at Containers/<id>/Data/Library/Caches.
 // macOS hides these from ~/Library/Caches, so they're a large blind spot. We
 // target the per-app Caches dir only — never the sibling data the app relies on.
-async function listContainerCaches() {
+async function listContainerCaches(signal) {
   const base = path.join(LIB, 'Containers');
   let entries = [];
   try { entries = await fsp.readdir(base, { withFileTypes: true }); } catch { return []; }
@@ -97,8 +97,8 @@ async function listContainerCaches() {
   const sized = await mapLimit(dirs, 8, async (e) => {
     const cacheDir = path.join(base, e.name, 'Data', 'Library', 'Caches');
     try { await fsp.access(cacheDir); } catch { return null; }      // app has no cache dir
-    return { name: e.name, path: cacheDir, size: await dirSize(cacheDir), category: 'Sandboxed app caches' };
-  });
+    return { name: e.name, path: cacheDir, size: await dirSize(cacheDir, signal), category: 'Sandboxed app caches' };
+  }, signal);
   return sized.filter((x) => x && x.size > 0);
 }
 
@@ -111,7 +111,7 @@ const APP_MEDIA_CACHES = [
   { label: 'Telegram media', match: /\.ru\.keepcoder\.Telegram$/, findPath: '*/postbox/media' },
 ];
 
-async function listAppMediaCaches() {
+async function listAppMediaCaches(signal) {
   const base = path.join(LIB, 'Group Containers');
   let entries = [];
   try { entries = await fsp.readdir(base, { withFileTypes: true }); } catch { return []; }
@@ -124,12 +124,12 @@ async function listAppMediaCaches() {
     // -prune so find reports the matching dir without walking into it (du sizes it).
     const stdout = await runReadable(
       'find', [root, '-type', 'd', '-path', rule.findPath, '-prune', '-print0'],
-      { maxBuffer: 1024 * 1024 }
+      { maxBuffer: 1024 * 1024, signal }
     );
     const dirs = splitNul(stdout);
     const sized = await mapLimit(dirs, 4, async (d) => (
-      { name: rule.label, path: d, size: await dirSize(d), category: 'App media caches' }
-    ));
+      { name: rule.label, path: d, size: await dirSize(d, signal), category: 'App media caches' }
+    ), signal);
     out.push(...sized.filter((x) => x.size > 0));
   }
   return out;
@@ -164,7 +164,7 @@ const APP_SUPPORT_EXTRAS = [
 // Sweep Application Support for the universal cache folders above (at any depth
 // down to browser profiles, e.g. "Edge/Default/Cache"), then roll every cache
 // dir up under its owning app so the user sees one row per app — like CleanMyMac.
-async function listAppSupportCaches() {
+async function listAppSupportCaches(signal) {
   const base = path.join(LIB, 'Application Support');
   const nameArgs = [];
   CACHE_DIR_NAMES.forEach((n, i) => { if (i) nameArgs.push('-o'); nameArgs.push('-name', n); });
@@ -172,7 +172,7 @@ async function listAppSupportCaches() {
   // into it (so nested caches aren't double-counted), and keep walking elsewhere.
   const stdout = await runReadable(
     'find', [base, '-maxdepth', '5', '-type', 'd', '(', ...nameArgs, ')', '-prune', '-print0'],
-    { maxBuffer: 1024 * 1024 * 8 }
+    { maxBuffer: 1024 * 1024 * 8, signal }
   );
   const dirs = splitNul(stdout);
   const groups = new Map(); // app folder name -> Set of cache dir paths
@@ -190,24 +190,24 @@ async function listAppSupportCaches() {
   }
   const items = await mapLimit([...groups.entries()], 6, async ([app, set]) => {
     const paths = [...set];
-    const sizes = await mapLimit(paths, 4, (p) => dirSize(p));
+    const sizes = await mapLimit(paths, 4, (p) => dirSize(p, signal), signal);
     const size = sizes.reduce((s, n) => s + n, 0);
     // `paths` carries every subfolder to trash; `path` is the app dir, shown to the user.
     return { name: app, path: path.join(base, app), paths, size, category: 'App caches' };
-  });
+  }, signal);
   return items.filter((x) => x.size > 0);
 }
 
 // Disk images and installer packages left in Downloads/Desktop after the app
 // they carried is already installed — pure leftovers, safe to trash. Surfaced
 // for review (unchecked by default) since they're loose user files.
-async function listInstallers() {
+async function listInstallers(signal) {
   const roots = [path.join(HOME, 'Downloads'), path.join(HOME, 'Desktop')];
   const out = [];
   for (const root of roots) {
     const stdout = await runReadable(
       'find', [root, '-maxdepth', '2', '-type', 'f', '(', '-iname', '*.dmg', '-o', '-iname', '*.pkg', ')', '-print0'],
-      { maxBuffer: 1024 * 1024 }
+      { maxBuffer: 1024 * 1024, signal }
     );
     for (const f of splitNul(stdout)) {
       try {
@@ -219,16 +219,27 @@ async function listInstallers() {
   return out.filter((x) => x.size > 0);
 }
 
-async function scanSystemJunk() {
-  const groups = await Promise.all([
-    ...CHILD_JUNK.map((r) => listChildJunk(r)),
-    listSingleJunk(),
-    listDotCache(),
-    listContainerCaches(),
-    listAppMediaCaches(),
-    listAppSupportCaches(),
-    listInstallers(),
-  ]);
+// Full junk scan. `signal` (AbortSignal) cancels between du/find spawns and
+// kills in-flight ones; `onProgress({phase, done, total})` fires as each
+// category group completes, so the UI can show live progress. Both optional —
+// a plain scanSystemJunk() behaves exactly as before.
+async function scanSystemJunk({ signal, onProgress } = {}) {
+  const tasks = [
+    ...CHILD_JUNK.map((r) => ({ phase: r.cat, run: () => listChildJunk(r, signal) })),
+    { phase: 'Mail & dev tool caches', run: () => listSingleJunk(signal) },
+    { phase: 'User cache dir', run: () => listDotCache(signal) },
+    { phase: 'Sandboxed app caches', run: () => listContainerCaches(signal) },
+    { phase: 'App media caches', run: () => listAppMediaCaches(signal) },
+    { phase: 'App caches', run: () => listAppSupportCaches(signal) },
+    { phase: 'Installers & disk images', run: () => listInstallers(signal) },
+  ];
+  let done = 0;
+  const groups = await Promise.all(tasks.map(async (t) => {
+    const res = await t.run();
+    done += 1;
+    onProgress?.({ phase: t.phase, done, total: tasks.length });
+    return res;
+  }));
   return groups.flat().sort((a, b) => b.size - a.size);
 }
 
@@ -236,8 +247,8 @@ async function scanSystemJunk() {
 // Sized here so the Trash view reports the real total; never trashed by Sweep
 // itself (out of ALLOWED_ROOTS) — Finder's "empty trash" already covers external
 // volumes, so the existing Empty Trash flow deletes these too.
-async function trashTotalSize() {
-  const sizes = [dirSize(path.join(HOME, '.Trash'))];
+async function trashTotalSize(signal) {
+  const sizes = [dirSize(path.join(HOME, '.Trash'), signal)];
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   if (uid != null) {
     let vols = [];
@@ -245,7 +256,7 @@ async function trashTotalSize() {
     // real mount points are directories; skip the boot-volume symlink (→ /)
     for (const v of vols.filter((e) => e.isDirectory())) {
       const t = path.join('/Volumes', v.name, '.Trashes', String(uid));
-      try { await fsp.access(t); sizes.push(dirSize(t)); } catch { /* volume has no trash for us */ }
+      try { await fsp.access(t); sizes.push(dirSize(t, signal)); } catch { /* volume has no trash for us */ }
     }
   }
   return (await Promise.all(sizes)).reduce((s, n) => s + n, 0);

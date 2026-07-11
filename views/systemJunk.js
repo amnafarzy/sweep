@@ -1,6 +1,7 @@
 // ================= SYSTEM JUNK (grouped by category) =================
-import { $, el, fmtBytes, escapeHtml, busy, confirmModal, toast } from '../ui/dom.js';
+import { $, el, fmtBytes, escapeHtml, confirmModal, toast } from '../ui/dom.js';
 import { maybeWarnAccess } from '../ui/list.js';
+import { runCancellableScan } from '../ui/scan.js';
 import { api } from '../ui/api.js';
 
 let cachesData = [], getCachesSel = () => [];
@@ -101,10 +102,20 @@ function updateJunkSel() {
 }
 
 export function initSystemJunk() {
-  $('#cachesScan').onclick = busy($('#cachesScan'), async () => {
-    $('#cachesList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning system junk…</p>';
-    populateSystemJunk(await api.scanSystemJunk());
-  });
+  $('#cachesScan').onclick = async () => {
+    const res = await runCancellableScan($('#cachesScan'), $('#cachesProgress'), () => {
+      $('#cachesList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning system junk…</p>';
+      $('#cachesTools').hidden = true;
+      return api.scanSystemJunk();
+    });
+    if (res === undefined) return;                       // this click was the cancel
+    if (res === null) {
+      $('#cachesList').innerHTML = '<p class="empty">Scan cancelled.</p>';
+      toast('Scan cancelled');
+      return;
+    }
+    populateSystemJunk(res);
+  };
   $('#cachesClean').onclick = async () => {
     const btn = $('#cachesClean');
     if (btn.dataset.busy) return;

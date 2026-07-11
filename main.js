@@ -41,12 +41,59 @@ async function trashMany(paths) {
 }
 
 // ---------------------------------------------------------------------------
+// CANCELLABLE SCANS
+//
+// One scan slot per window: starting a new cancellable scan aborts the previous
+// one, and 'scan:cancel' aborts on user request. Progress flows back over
+// webContents.send('scan:progress', {phase, done, total}); a cancelled scan
+// resolves to null (never an error), which the renderer shows as "cancelled".
+// ---------------------------------------------------------------------------
+const activeScans = new Map(); // webContents id -> AbortController
+
+function cancellableScan(e, fn) {
+  activeScans.get(e.sender.id)?.abort();
+  const ctrl = new AbortController();
+  activeScans.set(e.sender.id, ctrl);
+  const onProgress = (p) => { if (!e.sender.isDestroyed()) e.sender.send('scan:progress', p); };
+  return fn(ctrl.signal, onProgress)
+    .catch((err) => {
+      if (err?.name === 'AbortError') return null;
+      throw err;
+    })
+    .finally(() => { if (activeScans.get(e.sender.id) === ctrl) activeScans.delete(e.sender.id); });
+}
+
+// ---------------------------------------------------------------------------
 // IPC
 // ---------------------------------------------------------------------------
 ipcMain.handle('scan:dirSize', (_e, p) => { assertSafeToRemove(p); return dirSize(p); });
-ipcMain.handle('scan:systemJunk', () => scanSystemJunk());
+ipcMain.handle('scan:systemJunk', (e) => cancellableScan(e, (signal, onProgress) => (
+  scanSystemJunk({ signal, onProgress })
+)));
 ipcMain.handle('scan:memory', () => getMemory());
-ipcMain.handle('scan:largeFiles', (_e, minMB) => scanLargeFiles(minMB));
+ipcMain.handle('scan:largeFiles', (e, minMB) => cancellableScan(e, (signal, onProgress) => (
+  scanLargeFiles(minMB, { signal, onProgress })
+)));
+// The dashboard's combined Smart Scan: one cancellable pass over everything.
+// Each stage reports its own done/total; the stage name is prefixed onto the
+// phase so the single progress line stays self-explanatory.
+ipcMain.handle('scan:smart', (e) => cancellableScan(e, async (signal, onProgress) => {
+  const junk = await scanSystemJunk({
+    signal, onProgress: (p) => onProgress({ ...p, phase: 'System junk — ' + p.phase }),
+  });
+  signal.throwIfAborted();
+  const large = await scanLargeFiles(250, {
+    signal, onProgress: (p) => onProgress({ ...p, phase: 'Large files — ' + p.phase }),
+  });
+  signal.throwIfAborted();
+  onProgress({ phase: 'Trash & Downloads', done: 0, total: 1 });
+  const [trash, downloads] = await Promise.all([
+    trashTotalSize(signal), dirSize(path.join(HOME, 'Downloads'), signal),
+  ]);
+  onProgress({ phase: 'Trash & Downloads', done: 1, total: 1 });
+  return { junk, large, trash, downloads };
+}));
+ipcMain.handle('scan:cancel', (e) => { activeScans.get(e.sender.id)?.abort(); });
 ipcMain.handle('scan:trash', () => trashTotalSize()); // ~/.Trash plus /Volumes/*/.Trashes/<uid>
 ipcMain.handle('scan:downloads', () => dirSize(path.join(HOME, 'Downloads')));
 ipcMain.handle('scan:loginItems', () => listLoginItems());

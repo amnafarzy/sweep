@@ -1,6 +1,7 @@
 // ================= LARGE FILES =================
-import { $, fmtBytes, busy, confirmModal, toast } from '../ui/dom.js';
+import { $, fmtBytes, confirmModal, toast } from '../ui/dom.js';
 import { buildSelectableList, wireSelection, maybeWarnAccess } from '../ui/list.js';
+import { runCancellableScan } from '../ui/scan.js';
 import { api } from '../ui/api.js';
 
 let largeData = [], getLargeSel = () => [];
@@ -16,10 +17,20 @@ export function populateLargeFiles(items) {
 }
 
 export function initLargeFiles() {
-  $('#largeScan').onclick = busy($('#largeScan'), async () => {
-    $('#largeList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning your folders…</p>';
-    populateLargeFiles(await api.scanLargeFiles(+$('#largeThreshold').value));
-  });
+  $('#largeScan').onclick = async () => {
+    const res = await runCancellableScan($('#largeScan'), $('#largeProgress'), () => {
+      $('#largeList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning your folders…</p>';
+      $('#largeTools').hidden = true;
+      return api.scanLargeFiles(+$('#largeThreshold').value);
+    });
+    if (res === undefined) return;                       // this click was the cancel
+    if (res === null) {
+      $('#largeList').innerHTML = '<p class="empty">Scan cancelled.</p>';
+      toast('Scan cancelled');
+      return;
+    }
+    populateLargeFiles(res);
+  };
   $('#largeClean').onclick = async () => {
     const btn = $('#largeClean');
     if (btn.dataset.busy) return;

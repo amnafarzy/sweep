@@ -75,6 +75,7 @@ h1 { font-size: 23px; font-weight: 700; letter-spacing: -0.02em; }
 .lead { color: var(--text-dim); margin-top: 5px; font-size: 13.5px; }
 .view-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
 .head-controls { display: flex; gap: 8px; align-items: center; }
+.scan-progress { color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; margin: 0 0 10px; }
 
 /* Buttons */
 .btn {

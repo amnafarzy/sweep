@@ -24,6 +24,7 @@
         <button class="nav-item" data-view="memory"><span class="ico">◈</span> Free Up RAM</button>
         <button class="nav-item" data-view="login"><span class="ico">⏻</span> Login Items</button>
         <button class="nav-item" data-view="apps"><span class="ico">▢</span> Uninstaller</button>
+        <button class="nav-item" data-view="settings"><span class="ico">⚙</span> Settings</button>
       </nav>
       <div class="sidebar-foot">
         <p>Free &amp; open source</p>
@@ -48,6 +49,7 @@
             <h1>Smart Scan</h1>
             <p class="lead">Scan every category at once and see what you can safely clean.</p>
             <button class="btn btn-primary" id="smartScanBtn">Run Smart Scan</button>
+            <p class="scan-progress" id="smartProgress" role="status" aria-live="polite" hidden></p>
             <div class="dash-stats" id="dashStats"></div>
             <p class="hint dash-access" id="dashAccess" hidden>⚠️ Full Disk Access is off — totals may be understated. Grant it in System Settings → Privacy &amp; Security → Full Disk Access.</p>
           </div>
@@ -60,6 +62,7 @@
           <div><h1>System Junk</h1><p class="lead">Caches, logs &amp; re-downloadable media from across your system — including sandboxed apps and big media caches. Safe to clear; apps rebuild or refetch them.</p></div>
           <button class="btn" id="cachesScan">Scan</button>
         </header>
+        <p class="scan-progress" id="cachesProgress" role="status" aria-live="polite" hidden></p>
         <div class="list-tools" id="cachesTools" hidden>
           <label class="chk"><input type="checkbox" id="cachesAll" /> Select all</label>
           <span class="selsize" id="cachesSel">0 B selected</span>
@@ -73,6 +76,14 @@
         <header class="view-head">
           <div><h1>Large Files</h1><p class="lead">Files over a size threshold in your personal folders.</p></div>
           <div class="head-controls">
+            <select id="largeKind">
+              <option value="all">All kinds</option>
+              <option value="video">Video</option>
+              <option value="audio">Audio</option>
+              <option value="image">Images</option>
+              <option value="archive">Archives</option>
+              <option value="other">Other</option>
+            </select>
             <select id="largeThreshold">
               <option value="100">&gt; 100 MB</option>
               <option value="250">&gt; 250 MB</option>
@@ -82,6 +93,14 @@
             <button class="btn" id="largeScan">Scan</button>
           </div>
         </header>
+        <p class="scan-progress" id="largeProgress" role="status" aria-live="polite" hidden></p>
+        <div class="sort-bar" id="largeSortBar">
+          <span class="sort-label">Sort:</span>
+          <button data-key="name">Name</button>
+          <button data-key="kind">Kind</button>
+          <button data-key="lastOpened">Last opened</button>
+          <button data-key="size">Size</button>
+        </div>
         <div class="list-tools" id="largeTools" hidden>
           <label class="chk"><input type="checkbox" id="largeAll" /> Select all</label>
           <span class="selsize" id="largeSel">0 B selected</span>
@@ -131,10 +150,28 @@
 
       <!-- UNINSTALLER -->
       <section class="view" id="view-apps">
-        <header class="view-head"><div><h1>Uninstaller</h1><p class="lead">Remove an app and its leftover support files together.</p></div>
-          <button class="btn" id="appsScan">Load apps</button>
+        <header class="view-head">
+          <div><h1>Uninstaller</h1><p class="lead">Remove an app and its leftover support files together.</p></div>
+          <div class="head-controls">
+            <label class="chk"><input type="checkbox" id="appsUnusedOnly" /> Not used in 6+ months</label>
+            <select id="appsSort">
+              <option value="name">Sort: Name</option>
+              <option value="size">Sort: Size</option>
+              <option value="lastUsed">Sort: Last used</option>
+            </select>
+            <button class="btn" id="appsScan">Load apps</button>
+          </div>
         </header>
         <div class="list" id="appsList"><p class="empty">Tap Load apps to begin.</p></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <header class="view-head">
+          <div><h1>Settings</h1><p class="lead">Ignored paths are hidden from System Junk and Large Files scans until you un-ignore them here.</p></div>
+          <button class="btn" id="ignoreRefresh">Refresh</button>
+        </header>
+        <div class="list" id="ignoreList"><p class="empty">Nothing ignored.</p></div>
       </section>
     </main>
   </div>

@@ -23,9 +23,116 @@ test('accepts a single /Applications/*.app bundle (incl. names with spaces)', ()
   assert.ok(APP_BUNDLE_RE.test('/Applications/Foo.app'));
 });
 
+test('accepts a bundle one vendor-folder deep inside /Applications', () => {
+  assert.equal(assertSafeToRemove('/Applications/Utilities/Foo.app'), '/Applications/Utilities/Foo.app');
+  assert.equal(
+    assertSafeToRemove('/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app'),
+    '/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app',
+  );
+  assert.ok(APP_BUNDLE_RE.test('/Applications/Vendor/Foo.app'));
+});
+
+test('accepts a top-level ~/Applications/*.app bundle', () => {
+  const p = path.join(HOME, 'Applications', 'Foo.app');
+  assert.equal(assertSafeToRemove(p), p);
+  const spaced = path.join(HOME, 'Applications', 'My Tool.app');
+  assert.equal(assertSafeToRemove(spaced), spaced);
+  assert.ok(APP_BUNDLE_RE.test(p));
+});
+
 test('rejects each allowed root itself (never trash the whole folder)', () => {
   for (const root of ALLOWED_ROOTS) {
     assert.throws(() => assertSafeToRemove(root), /allowed areas/);
+  }
+});
+
+test('accepts leftovers inside the uninstaller\'s newer user-Library roots', () => {
+  for (const p of [
+    path.join(HOME, 'Library', 'Application Scripts', 'com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'WebKit', 'com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'Cookies', 'com.tinyspeck.slackmacgap.binarycookies'),
+    path.join(HOME, 'Library', 'Group Containers', 'AB12CD34EF.com.tinyspeck.slackmacgap'),
+    path.join(HOME, 'Library', 'LaunchAgents', 'com.tinyspeck.slackmacgap.plist'),
+    // crash reports live under Logs, which is already an allowed root
+    path.join(HOME, 'Library', 'Logs', 'DiagnosticReports', 'Slack_2026-05-01.crash'),
+  ]) {
+    assert.equal(assertSafeToRemove(p), p);
+  }
+});
+
+test('accepts the new system-junk category locations', () => {
+  for (const p of [
+    path.join(HOME, 'Library', 'Application Support', 'MobileSync', 'Backup', '00008101-000A1B2C3D4E'),
+    path.join(HOME, 'Library', 'Containers', 'com.apple.mail', 'Data', 'Library', 'Mail Downloads'),
+    path.join(HOME, 'Library', 'Developer', 'Xcode', 'Archives', '2026-06-01'),
+    path.join(HOME, 'Library', 'Caches', 'CocoaPods'),
+    path.join(HOME, '.npm', '_cacache'),
+    path.join(HOME, '.gradle', 'caches'),
+    path.join(HOME, '.cache', 'pip'), // children of ~/.cache — the scanner never targets the root
+  ]) {
+    assert.equal(assertSafeToRemove(p), p);
+  }
+});
+
+test('rejects the dev-tool dot-dir roots themselves and their siblings', () => {
+  for (const p of [
+    path.join(HOME, '.npm'), path.join(HOME, '.cache'), path.join(HOME, '.gradle'),
+    // adjacent dotfile dirs must NOT ride along on the new roots
+    path.join(HOME, '.ssh'), path.join(HOME, '.config', 'git'), path.join(HOME, '.gradle2', 'caches'),
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
+test('external volume trash is reported only, never trashable by Sweep', () => {
+  for (const p of [
+    '/Volumes/USB/.Trashes/501', '/Volumes/USB/.Trashes/501/file.txt', '/Volumes/USB',
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
+test('Group Containers: known media-cache paths and whole containers pass', () => {
+  const GC = path.join(HOME, 'Library', 'Group Containers');
+  // the Telegram media cache (the one thing the junk scan emits here) …
+  const media = path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox', 'media');
+  assert.equal(assertSafeToRemove(media), media);
+  // … including files inside it
+  const inMedia = path.join(media, '0', 'some-video.mp4');
+  assert.equal(assertSafeToRemove(inMedia), inMedia);
+  // a whole container (direct child) — the Uninstaller's leftover flow,
+  // always listed in full in the confirmation dialog
+  const whole = path.join(GC, 'S8EX82NJP6.com.macpaw.CleanMyMac5');
+  assert.equal(assertSafeToRemove(whole), whole);
+});
+
+test('Group Containers: nested app data is refused', () => {
+  const GC = path.join(HOME, 'Library', 'Group Containers');
+  for (const p of [
+    // Outlook's mail data lives here — a scanner bug must never reach it
+    path.join(GC, 'group.com.microsoft.outlook', 'Outlook', 'Outlook 15 Profiles', 'Main Profile', 'Data', 'Outlook.sqlite'),
+    path.join(GC, 'group.com.microsoft.outlook', 'Data'),
+    // Telegram's message store sits right next to the media cache
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox', 'db'),
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox'),
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456'),
+    // a media-cache-looking path under the WRONG container doesn't pass
+    path.join(GC, 'group.com.other.app', 'account-1', 'postbox', 'media'),
+    // and the root itself stays refused like every root
+    GC,
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
+test('system-level /Library leftovers stay read-only (never trashable)', () => {
+  for (const p of [
+    '/Library/Application Support/Slack',
+    '/Library/LaunchAgents/com.tinyspeck.slackmacgap.plist',
+    '/Library/LaunchDaemons/com.docker.vmnetd.plist',
+    '/Library/Application Support', '/Library/LaunchAgents', '/Library/LaunchDaemons',
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
   }
 });
 
@@ -62,11 +169,27 @@ test('rejects empty / non-string input', () => {
   }
 });
 
-test('rejects an /Applications path that is not a single *.app bundle', () => {
+test('rejects application paths outside the exact allowed bundle depths', () => {
   assert.throws(() => assertSafeToRemove('/Applications'), /allowed areas/);
   assert.throws(() => assertSafeToRemove('/Applications/Foo.txt'), /allowed areas/);
   assert.throws(() => assertSafeToRemove('/Applications/Foo.app/Contents'), /allowed areas/);
-  assert.throws(() => assertSafeToRemove('/Applications/Nested/Foo.app'), /allowed areas/);
+  // vendor folder itself, and non-bundle files inside one
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor/notes.txt'), /allowed areas/);
+  // two levels of nesting is too deep
+  assert.throws(() => assertSafeToRemove('/Applications/A/B/Foo.app'), /allowed areas/);
+  // a bundle *inside* another bundle is bundle innards, not an app
+  assert.throws(() => assertSafeToRemove('/Applications/Foo.app/Nested.app'), /allowed areas/);
+  // ~/Applications: root itself, nested bundles, and bundle innards all refused
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications')), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications', 'Sub', 'Foo.app')), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications', 'Foo.app', 'Contents')), /allowed areas/);
+  // wrong-case variants never match (see case-insensitivity rationale above)
+  assert.throws(() => assertSafeToRemove('/applications/Foo.app'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'applications', 'Foo.app')), /allowed areas/);
+  // a bare ".app" segment is not a bundle name
+  assert.throws(() => assertSafeToRemove('/Applications/.app'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor/.app'), /allowed areas/);
 });
 
 test('isStrictlyInside excludes the parent itself but includes descendants', () => {

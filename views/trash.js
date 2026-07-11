@@ -17,7 +17,7 @@ export function initTrash() {
     btn.dataset.busy = '1';
     btn.disabled = true;
     try {
-      const ok = await confirmModal('Empty the Trash?', 'This permanently deletes everything in your Trash. This cannot be undone.', 'Empty Trash');
+      const ok = await confirmModal('Empty the Trash?', 'This permanently deletes everything in your Trash, including trash on external volumes. This cannot be undone.', 'Empty Trash');
       if (!ok) return;
       const res = await api.emptyTrash();
       toast(res.ok ? 'Trash emptied' : 'Failed: ' + res.error);

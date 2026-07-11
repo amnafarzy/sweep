@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { fmtBytes } = require('../lib/format');
+const { fmtBytes, fileKind } = require('../lib/format');
 
 test('zero and sub-1-byte values render as "0 B"', () => {
   assert.equal(fmtBytes(0), '0 B');
@@ -28,4 +28,17 @@ test('exact KB / MB / GB / TB boundaries', () => {
 test('non-boundary values round to one decimal', () => {
   assert.equal(fmtBytes(1536), '1.5 KB');           // 1.5 * 1024
   assert.equal(fmtBytes(1024 * 1024 * 2.5), '2.5 MB');
+});
+
+test('fileKind classifies by extension, case-insensitively', () => {
+  assert.equal(fileKind('Holiday.MOV'), 'video');
+  assert.equal(fileKind('clip.mp4'), 'video');
+  assert.equal(fileKind('song.flac'), 'audio');
+  assert.equal(fileKind('photo.HEIC'), 'image');
+  assert.equal(fileKind('backup.tar.gz'), 'archive');
+  assert.equal(fileKind('installer.dmg'), 'archive');
+  assert.equal(fileKind('report.pdf'), 'other');
+  assert.equal(fileKind('Makefile'), 'other');       // no extension
+  assert.equal(fileKind(''), 'other');
+  assert.equal(fileKind('archive.zip.download'), 'other'); // only the final extension counts
 });

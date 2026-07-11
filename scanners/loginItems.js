@@ -2,10 +2,14 @@
 // LOGIN ITEMS  (list + reversible toggle)
 //
 // Lists the user's LaunchAgents and toggles them by renaming the plist (the
-// durable, reversible mechanism launchd reads at login). `toggleLoginItem`
-// accepts a path over IPC, so it validates that path in this (main) process —
-// it must live inside ~/Library/LaunchAgents and pass assertSafeToRemove —
-// before touching the filesystem. The renderer is never trusted.
+// durable, reversible mechanism launchd reads at login). System-level
+// /Library/LaunchAgents and /Library/LaunchDaemons are listed too, but
+// READ-ONLY (scope: 'system') — changing those needs admin rights, so the UI
+// shows them with a lock badge and no toggle. `toggleLoginItem` accepts a path
+// over IPC, so it validates that path in this (main) process — it must live
+// inside ~/Library/LaunchAgents and pass assertSafeToRemove — before touching
+// the filesystem; a system path handed to it is refused. The renderer is never
+// trusted.
 // ---------------------------------------------------------------------------
 const path = require('path');
 const fsp = require('fs/promises');
@@ -13,22 +17,33 @@ const fsp = require('fs/promises');
 const { runReadable, HOME } = require('../lib/exec');
 const { isStrictlyInside, assertSafeToRemove } = require('../lib/safety');
 
+const LOGIN_ITEM_SOURCES = [
+  { dir: path.join(HOME, 'Library', 'LaunchAgents'), scope: 'user' },
+  { dir: '/Library/LaunchAgents', scope: 'system' },
+  { dir: '/Library/LaunchDaemons', scope: 'system' },
+];
+
 async function listLoginItems() {
-  const dir = path.join(HOME, 'Library', 'LaunchAgents');
   const out = [];
-  let entries = [];
-  try { entries = await fsp.readdir(dir); } catch { return out; }
-  for (const f of entries) {
-    const isPlist = f.endsWith('.plist');
-    const isDisabled = f.endsWith('.plist.disabled');
-    if (!isPlist && !isDisabled) continue;
-    out.push({
-      name: f.replace(/\.plist(\.disabled)?$/, ''),
-      path: path.join(dir, f),
-      enabled: isPlist,
-    });
+  for (const { dir, scope } of LOGIN_ITEM_SOURCES) {
+    let entries = [];
+    try { entries = await fsp.readdir(dir); } catch { continue; }
+    for (const f of entries) {
+      const isPlist = f.endsWith('.plist');
+      const isDisabled = f.endsWith('.plist.disabled');
+      if (!isPlist && !isDisabled) continue;
+      out.push({
+        name: f.replace(/\.plist(\.disabled)?$/, ''),
+        path: path.join(dir, f),
+        enabled: isPlist,
+        scope,
+      });
+    }
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  // user items (togglable) first, then the read-only system ones
+  return out.sort((a, b) => (
+    a.scope === b.scope ? a.name.localeCompare(b.name) : (a.scope === 'user' ? -1 : 1)
+  ));
 }
 
 async function toggleLoginItem(p, enable) {

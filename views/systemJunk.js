@@ -1,6 +1,7 @@
 // ================= SYSTEM JUNK (grouped by category) =================
-import { $, el, fmtBytes, escapeHtml, busy, confirmModal, toast } from '../ui/dom.js';
+import { $, el, fmtBytes, escapeHtml, confirmModal, toast } from '../ui/dom.js';
 import { maybeWarnAccess } from '../ui/list.js';
+import { runCancellableScan } from '../ui/scan.js';
 import { api } from '../ui/api.js';
 
 let cachesData = [], getCachesSel = () => [];
@@ -59,11 +60,28 @@ function renderSystemJunk(items) {
     arr.forEach(({ it, idx }) => {
       const row = el('div', 'row selectable');
       const icb = el('input'); icb.type = 'checkbox'; icb.className = 'item-chk'; icb.dataset.idx = idx;
-      const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
+      // `warn` marks items that are NOT regenerable (e.g. iOS device backups) —
+      // show the caution inline so it's visible before anything is selected.
+      const warnBadge = it.warn ? `<span class="r-badge">⚠ ${escapeHtml(it.warn)}</span>` : '';
+      const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}${warnBadge}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
       info.style.flex = '1'; info.style.minWidth = '0';
       const size = el('div', 'r-size', fmtBytes(it.size));
-      row.append(icb, info, size);
-      row.onclick = (e) => { if (e.target === icb) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };
+      const ig = el('button', 'btn btn-ghost', 'Ignore');
+      ig.title = 'Hide this path from future scans (review in Settings)';
+      ig.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          await api.addIgnore(it.path);
+          cachesData = cachesData.filter((x) => x !== it);
+          renderSystemJunk(cachesData);
+          maybeWarnAccess($('#cachesList')); // the rebuild dropped any access banner
+          toast('Ignored — review under Settings');
+        } catch (err) {
+          toast('Ignore failed: ' + (err?.message || 'unknown error'));
+        }
+      };
+      row.append(icb, info, size, ig);
+      row.onclick = (e) => { if (e.target === icb || e.target.closest('button')) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };
       body.appendChild(row);
     });
 
@@ -98,10 +116,20 @@ function updateJunkSel() {
 }
 
 export function initSystemJunk() {
-  $('#cachesScan').onclick = busy($('#cachesScan'), async () => {
-    $('#cachesList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning system junk…</p>';
-    populateSystemJunk(await api.scanSystemJunk());
-  });
+  $('#cachesScan').onclick = async () => {
+    const res = await runCancellableScan($('#cachesScan'), $('#cachesProgress'), () => {
+      $('#cachesList').innerHTML = '<p class="empty"><span class="spinner"></span>Scanning system junk…</p>';
+      $('#cachesTools').hidden = true;
+      return api.scanSystemJunk();
+    });
+    if (res === undefined) return;                       // this click was the cancel
+    if (res === null) {
+      $('#cachesList').innerHTML = '<p class="empty">Scan cancelled.</p>';
+      toast('Scan cancelled');
+      return;
+    }
+    populateSystemJunk(res);
+  };
   $('#cachesClean').onclick = async () => {
     const btn = $('#cachesClean');
     if (btn.dataset.busy) return;

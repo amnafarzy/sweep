@@ -50,12 +50,46 @@ export function showView(view) {
   if (nav) nav.click();
 }
 
+// Render the modal body. `body` is either a plain string (prose only) or
+// { text, sections: [{ heading, paths, tone }] } — prose plus one or more
+// labelled path lists. Every value goes in as textContent: paths are untrusted
+// filenames and must never be parsed as HTML.
+function renderModalBody(host, body) {
+  host.innerHTML = '';
+  const { text, sections = [] } = typeof body === 'string' ? { text: body } : body;
+  if (text) {
+    const p = el('p', 'modal-prose');
+    p.textContent = text;
+    host.appendChild(p);
+  }
+  if (!sections.length) return false;
+  const wrap = el('div', 'modal-sections');
+  sections.forEach((s) => {
+    const sec = el('div', 'modal-section' + (s.tone ? ' tone-' + s.tone : ''));
+    const head = el('div', 'modal-section-head');
+    head.textContent = s.heading;
+    const ul = el('ul', 'path-list');
+    (s.paths || []).forEach((path) => {
+      const li = el('li');
+      li.textContent = path;
+      ul.appendChild(li);
+    });
+    sec.appendChild(head);
+    sec.appendChild(ul);
+    wrap.appendChild(sec);
+  });
+  host.appendChild(wrap);
+  return true;
+}
+
 export function confirmModal(title, body, okLabel = 'Confirm') {
   return new Promise((resolve) => {
     const bg = $('#modalBg');
+    const modal = bg.querySelector('.modal');
     const prevFocus = document.activeElement; // restore focus here when we close
     $('#modalTitle').textContent = title;
-    $('#modalBody').textContent = body;
+    // Path lists need the room; a plain yes/no prompt stays compact.
+    modal.classList.toggle('modal-wide', renderModalBody($('#modalBody'), body));
     $('#modalOk').textContent = okLabel;
     bg.hidden = false;
     const onKey = (e) => {

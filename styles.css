@@ -182,8 +182,18 @@ select { background: var(--surface-2); color: var(--text); border: 1px solid var
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal-bg[hidden] { display: none; }
 .modal { background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 26px; width: 420px; max-width: 90vw; }
+/* Wider whenever the body carries path lists; simple yes/no prompts stay at 420px. */
+.modal.modal-wide { width: 560px; }
 .modal h2 { font-size: 18px; margin-bottom: 10px; }
-.modal p { color: var(--text-dim); font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow-y: auto; }
+.modal-prose { color: var(--text-dim); font-size: 13px; line-height: 1.55; }
+/* One scroll region for all sections, so a long path list stays reviewable
+   without stretching the dialog past the viewport. */
+.modal-sections { margin-top: 16px; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.modal-section-head { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 7px; }
+.modal-section.tone-warn .modal-section-head { color: var(--amber); }
+.modal-section.tone-warn { border-left: 2px solid var(--amber); padding-left: 12px; }
+.path-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.path-list li { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
 .modal-acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
 .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text); padding: 11px 20px; border-radius: var(--radius-sm); font-size: 13px; z-index: 200; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
 

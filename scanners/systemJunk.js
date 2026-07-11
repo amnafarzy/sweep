@@ -18,6 +18,7 @@ const fsp = require('fs/promises');
 
 const { runReadable, mapLimit, dirSize, HOME, LIB } = require('../lib/exec');
 const { splitNul } = require('../lib/parse');
+const { APP_MEDIA_CACHES } = require('../lib/appMediaCaches');
 
 // "Children" rules: every direct child of `base` is an independent junk item.
 // `exclude` names children surfaced by another category instead (never twice);
@@ -104,13 +105,11 @@ async function listContainerCaches(signal) {
 
 // Per-app media caches: re-downloadable content some apps stash in their group
 // container, which never shows up under ~/Library/Caches and can reach tens of
-// GB. Matched by group-container id and a path pattern so we only ever touch the
-// media cache, never the message database or account data sitting beside it.
-// Telegram's account-*/postbox/media is the canonical example.
-const APP_MEDIA_CACHES = [
-  { label: 'Telegram media', match: /\.ru\.keepcoder\.Telegram$/, findPath: '*/postbox/media' },
-];
-
+// GB. The rules live in lib/appMediaCaches.js — shared with the trash guard, so
+// the scanner and lib/safety.js can never drift apart on what's removable here.
+// We only ever touch the media cache, never the message database or account
+// data sitting beside it; Telegram's account-*/postbox/media is the canonical
+// example.
 async function listAppMediaCaches(signal) {
   const base = path.join(LIB, 'Group Containers');
   let entries = [];
@@ -118,7 +117,7 @@ async function listAppMediaCaches(signal) {
   const out = [];
   for (const e of entries) {
     if (!e.isDirectory()) continue;
-    const rule = APP_MEDIA_CACHES.find((r) => r.match.test(e.name));
+    const rule = APP_MEDIA_CACHES.find((r) => r.container.test(e.name));
     if (!rule) continue;
     const root = path.join(base, e.name);
     // -prune so find reports the matching dir without walking into it (du sizes it).

@@ -92,6 +92,39 @@ test('external volume trash is reported only, never trashable by Sweep', () => {
   }
 });
 
+test('Group Containers: known media-cache paths and whole containers pass', () => {
+  const GC = path.join(HOME, 'Library', 'Group Containers');
+  // the Telegram media cache (the one thing the junk scan emits here) …
+  const media = path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox', 'media');
+  assert.equal(assertSafeToRemove(media), media);
+  // … including files inside it
+  const inMedia = path.join(media, '0', 'some-video.mp4');
+  assert.equal(assertSafeToRemove(inMedia), inMedia);
+  // a whole container (direct child) — the Uninstaller's leftover flow,
+  // always listed in full in the confirmation dialog
+  const whole = path.join(GC, 'S8EX82NJP6.com.macpaw.CleanMyMac5');
+  assert.equal(assertSafeToRemove(whole), whole);
+});
+
+test('Group Containers: nested app data is refused', () => {
+  const GC = path.join(HOME, 'Library', 'Group Containers');
+  for (const p of [
+    // Outlook's mail data lives here — a scanner bug must never reach it
+    path.join(GC, 'group.com.microsoft.outlook', 'Outlook', 'Outlook 15 Profiles', 'Main Profile', 'Data', 'Outlook.sqlite'),
+    path.join(GC, 'group.com.microsoft.outlook', 'Data'),
+    // Telegram's message store sits right next to the media cache
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox', 'db'),
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456', 'postbox'),
+    path.join(GC, '6N38VWS5BX.ru.keepcoder.Telegram', 'account-123456'),
+    // a media-cache-looking path under the WRONG container doesn't pass
+    path.join(GC, 'group.com.other.app', 'account-1', 'postbox', 'media'),
+    // and the root itself stays refused like every root
+    GC,
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
 test('system-level /Library leftovers stay read-only (never trashable)', () => {
   for (const p of [
     '/Library/Application Support/Slack',

@@ -445,3 +445,55 @@ imports are all same-origin.
 *Not exercised:* the actual destructive paths (trash/empty/purge/login-toggle) were stubbed
 during verification to avoid moving real files — their code is byte-for-byte the pre-split
 logic, just relocated, and `assertSafeToRemove` is still covered by the unit tests.
+
+---
+
+## Sixth pass — app icon + DMG presentation (2026-06-07)
+
+**Task P3.** The packaged app used the default Electron icon and an unstyled DMG. This pass
+adds a branded icon and a laid-out DMG. **No runtime/app code changed** — purely packaging
+resources plus `package.json` `build` config, so none of the safety invariants are touched
+(no new commands, no IPC, no filesystem paths; `main.js`/`preload.js`/scanners untouched).
+
+**What I did**
+- **`build/make-icon.js`** — a dependency-free Node generator (no `sharp`/`canvas`/
+  ImageMagick/`iconutil` available here, since I'm off-Mac). It renders the mark
+  analytically: a mint→teal **145° gradient rounded square** holding a dark **"S"** on the
+  dark app base, using the exact `styles.css` `:root` colours (`--mint #3dd7a8`,
+  `--mint-dim #1f8a6a`, base `#0d1117`, ink `#04241a`) — i.e. the in-app `.brand-mark`
+  enlarged. The "S" is drawn as two stroked circular arcs (rounded caps via endpoint
+  distance), so no font is needed. It supersamples a 2048² master, box-downsamples to every
+  size, and writes `icon.png` (1024²), `icon.iconset/` (10 Apple PNGs), `icon.icns`, and
+  `dmg-background.png` (+`@2x`).
+- **`build/icon.icns`** — assembled directly in Node as a PNG-backed ICNS (`icp4/5/6`,
+  `ic07–ic14`). Validated by parsing it back: magic + declared length match, all 11 chunks
+  are valid PNGs at the expected dimensions.
+- **`package.json`** — wired `build.mac.icon` → `build/icon.icns`, and added `build.dmg`
+  (window 540×380, `iconSize` 96, app at `(150,200)` + `/Applications` link at `(390,200)`,
+  `background: build/dmg-background.png`). The background draws a soft mint glow under each
+  icon slot and a guide arrow aligned to those coordinates.
+- **`.gitignore`** — `build/` was previously fully ignored; switched to committing the
+  packaging resources while still ignoring `dist/`, `out/`, and the regenerable
+  `build/icon.iconset/`.
+- **`build/README.md`** — documents the brand spec, the `node build/make-icon.js`
+  regeneration, the off-Mac ICNS assembly, and the canonical `iconutil`/`sips` Mac route.
+- Updated the main `README.md` build section.
+
+**Verified (off-Mac, Linux)**
+- `npx electron-builder --mac --dir` loads the `build` config and packages `Sweep.app`
+  with **`icon.icns` embedded** in `Contents/Resources/` and `CFBundleIconFile=icon.icns`
+  in `Info.plist` (the only skipped step is macOS-only code signing). So the
+  electron-builder config is valid and the icon is picked up.
+- The 1024² master was rendered and eyeballed — the "S" reads cleanly and the gradient/
+  rounded-square/base match the in-app brand.
+- `icon.icns` structure validated chunk-by-chunk.
+
+**macOS-runtime assumptions I could NOT verify (not on a Mac)**
+- **The actual `.dmg`** can't be produced off-Mac — electron-builder shells out to
+  `hdiutil`/HFS tooling that only exists on macOS. I validated the DMG *config* and the
+  background image, but the rendered DMG window (icon placement vs. the background, arrow
+  alignment, exact title-bar offset) needs a Mac to confirm; the `(x,y)` may want a few px
+  of nudging once seen in Finder.
+- **Icon appearance in Finder/Dock** at each size, and the `iconutil` route, were not run
+  on a real Mac. The off-Mac `.icns` is a structurally valid PNG-backed container that
+  macOS reads natively, but its on-screen rendering wasn't visually confirmed there.

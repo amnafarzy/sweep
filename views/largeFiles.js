@@ -36,6 +36,9 @@ function render() {
     },
   });
   getLargeSel = wireSelection($('#largeList'), view, $('#largeTools'), $('#largeSel'), $('#largeAll'), $('#largeClean'));
+  // Rebuilding the list wiped any Full Disk Access banner — re-add it, or the
+  // warning silently disappears the first time the user sorts or filters.
+  maybeWarnAccess($('#largeList'));
   // sort indicators on the column headers
   $('#largeSortBar').querySelectorAll('button').forEach((b) => {
     b.textContent = b.dataset.label + (b.dataset.key === sortKey ? (sortDir === 1 ? ' ▲' : ' ▼') : '');
@@ -47,7 +50,6 @@ function render() {
 export function populateLargeFiles(items) {
   largeData = items;
   render();
-  maybeWarnAccess($('#largeList'));
 }
 
 export function initLargeFiles() {

@@ -6,7 +6,7 @@
 // Junk and Large Files). System Junk renders its own grouped variant in its own
 // module, but reuses the access banner from here.
 // ---------------------------------------------------------------------------
-import { el, escapeHtml, fmtBytes } from './dom.js';
+import { el, escapeHtml, fmtBytes, toast } from './dom.js';
 import { api } from './api.js';
 
 // Options: `tag` shows the category/dir chip; `meta(it)` adds a dim fixed
@@ -30,7 +30,12 @@ export function buildSelectableList(container, items, { tag, meta, onIgnore } = 
     if (onIgnore) {
       const ig = el('button', 'btn btn-ghost', 'Ignore');
       ig.title = 'Hide this path from future scans (review in Settings)';
-      ig.onclick = (e) => { e.stopPropagation(); onIgnore(it); };
+      // onIgnore is typically async (IPC) — surface a failure instead of
+      // letting it become a silent unhandled rejection.
+      ig.onclick = (e) => {
+        e.stopPropagation();
+        Promise.resolve(onIgnore(it)).catch((err) => toast('Ignore failed: ' + (err?.message || 'unknown error')));
+      };
       row.appendChild(ig);
     }
     // Clicking anywhere on the row toggles its checkbox (the checkbox itself

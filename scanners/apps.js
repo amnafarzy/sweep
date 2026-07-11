@@ -30,16 +30,19 @@ async function listInstalledApps() {
     seen.add(full);
     out.push({ name: file.replace(/\.app$/, ''), path: full });
   };
+  // A bundle is a directory (or a symlink a user pointed at one); a plain FILE
+  // named *.app is not an app and would confuse everything downstream.
+  const looksLikeBundle = (e) => e.name.endsWith('.app') && (e.isDirectory() || e.isSymbolicLink());
   for (const dir of ['/Applications', path.join(HOME, 'Applications')]) {
     let entries = [];
     try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
-      if (e.name.endsWith('.app')) { add(e.name, dir); continue; }
-      if (dir !== '/Applications' || !e.isDirectory()) continue; // vendor nesting: /Applications only
+      if (looksLikeBundle(e)) { add(e.name, dir); continue; }
+      if (dir !== '/Applications' || !e.isDirectory() || e.name.endsWith('.app')) continue; // vendor nesting: /Applications only
       const sub = path.join(dir, e.name);
       let subEntries = [];
-      try { subEntries = await fsp.readdir(sub); } catch { continue; }
-      for (const f of subEntries) if (f.endsWith('.app')) add(f, sub);
+      try { subEntries = await fsp.readdir(sub, { withFileTypes: true }); } catch { continue; }
+      for (const f of subEntries) if (looksLikeBundle(f)) add(f.name, sub);
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

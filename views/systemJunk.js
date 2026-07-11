@@ -70,10 +70,15 @@ function renderSystemJunk(items) {
       ig.title = 'Hide this path from future scans (review in Settings)';
       ig.onclick = async (e) => {
         e.stopPropagation();
-        await api.addIgnore(it.path);
-        cachesData = cachesData.filter((x) => x !== it);
-        renderSystemJunk(cachesData);
-        toast('Ignored — review under Settings');
+        try {
+          await api.addIgnore(it.path);
+          cachesData = cachesData.filter((x) => x !== it);
+          renderSystemJunk(cachesData);
+          maybeWarnAccess($('#cachesList')); // the rebuild dropped any access banner
+          toast('Ignored — review under Settings');
+        } catch (err) {
+          toast('Ignore failed: ' + (err?.message || 'unknown error'));
+        }
       };
       row.append(icb, info, size, ig);
       row.onclick = (e) => { if (e.target === icb || e.target.closest('button')) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };

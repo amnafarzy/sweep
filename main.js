@@ -57,16 +57,24 @@ let _ignores;
 const ignores = () => (_ignores ??= createIgnoreStore(path.join(app.getPath('userData'), 'ignored.json')));
 
 function cancellableScan(e, fn) {
-  activeScans.get(e.sender.id)?.abort();
+  const senderId = e.sender.id; // capture: e.sender.id is unreadable once destroyed
+  activeScans.get(senderId)?.abort();
   const ctrl = new AbortController();
-  activeScans.set(e.sender.id, ctrl);
+  activeScans.set(senderId, ctrl);
+  // If the window closes mid-scan, nobody is listening — abort so du/find stop
+  // spawning instead of grinding on for minutes into the void.
+  const onDestroyed = () => ctrl.abort();
+  e.sender.once('destroyed', onDestroyed);
   const onProgress = (p) => { if (!e.sender.isDestroyed()) e.sender.send('scan:progress', p); };
   return fn(ctrl.signal, onProgress)
     .catch((err) => {
       if (err?.name === 'AbortError') return null;
       throw err;
     })
-    .finally(() => { if (activeScans.get(e.sender.id) === ctrl) activeScans.delete(e.sender.id); });
+    .finally(() => {
+      try { e.sender.removeListener('destroyed', onDestroyed); } catch { /* already torn down */ }
+      if (activeScans.get(senderId) === ctrl) activeScans.delete(senderId);
+    });
 }
 
 // ---------------------------------------------------------------------------

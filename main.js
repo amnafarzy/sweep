@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
 const path = require('path');
+const { setMaxListeners } = require('events');
 
 const { run, dirSize, HOME } = require('./lib/exec');
 const { assertSafeToRemove } = require('./lib/safety');
@@ -60,6 +61,11 @@ function cancellableScan(e, fn) {
   const senderId = e.sender.id; // capture: e.sender.id is unreadable once destroyed
   activeScans.get(senderId)?.abort();
   const ctrl = new AbortController();
+  // One scan's signal is handed to every du/find spawn, and execFile registers an
+  // abort listener per child — mapLimit's concurrency alone blows past the default
+  // cap of 10 and Node warns about a leak. Nothing actually leaks (each listener
+  // comes off when its child exits), so lift the cap on this signal only.
+  setMaxListeners(0, ctrl.signal); // 0 = unlimited
   activeScans.set(senderId, ctrl);
   // If the window closes mid-scan, nobody is listening — abort so du/find stop
   // spawning instead of grinding on for minutes into the void.

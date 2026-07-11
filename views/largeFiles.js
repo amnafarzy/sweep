@@ -38,5 +38,4 @@ export function initLargeFiles() {
       btn.disabled = getLargeSel().length === 0;
     }
   };
-  };
 }

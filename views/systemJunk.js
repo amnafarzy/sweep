@@ -121,9 +121,4 @@ export function initSystemJunk() {
       updateJunkSel();
     }
   };
-    // A grouped app item carries several cache subfolders in `paths`; expand those.
-    const res = await api.cleanCaches(sel.flatMap((x) => x.paths || [x.path]));
-    toast(`Cleared ${fmtBytes(total)}${res.failed.length ? `, ${res.failed.length} folder(s) failed` : ''}`);
-    $('#cachesScan').click();
-  };
 }

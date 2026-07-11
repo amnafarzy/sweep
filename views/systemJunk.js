@@ -59,7 +59,10 @@ function renderSystemJunk(items) {
     arr.forEach(({ it, idx }) => {
       const row = el('div', 'row selectable');
       const icb = el('input'); icb.type = 'checkbox'; icb.className = 'item-chk'; icb.dataset.idx = idx;
-      const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
+      // `warn` marks items that are NOT regenerable (e.g. iOS device backups) —
+      // show the caution inline so it's visible before anything is selected.
+      const warnBadge = it.warn ? `<span class="r-badge">⚠ ${escapeHtml(it.warn)}</span>` : '';
+      const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}${warnBadge}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
       info.style.flex = '1'; info.style.minWidth = '0';
       const size = el('div', 'r-size', fmtBytes(it.size));
       row.append(icb, info, size);

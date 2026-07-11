@@ -8,7 +8,7 @@ const { assertSafeToRemove } = require('./lib/safety');
 // main.js stays the Electron glue: it wires these to IPC channels and owns the
 // app/window/menu lifecycle. Nothing here builds a shell string or trusts a path
 // from the renderer — each handler re-validates through the imported guards.
-const { scanSystemJunk } = require('./scanners/systemJunk');
+const { scanSystemJunk, trashTotalSize } = require('./scanners/systemJunk');
 const { scanLargeFiles } = require('./scanners/largeFiles');
 const { getMemory } = require('./scanners/memory');
 const { listLoginItems, toggleLoginItem } = require('./scanners/loginItems');
@@ -47,7 +47,7 @@ ipcMain.handle('scan:dirSize', (_e, p) => { assertSafeToRemove(p); return dirSiz
 ipcMain.handle('scan:systemJunk', () => scanSystemJunk());
 ipcMain.handle('scan:memory', () => getMemory());
 ipcMain.handle('scan:largeFiles', (_e, minMB) => scanLargeFiles(minMB));
-ipcMain.handle('scan:trash', () => dirSize(path.join(HOME, '.Trash')));
+ipcMain.handle('scan:trash', () => trashTotalSize()); // ~/.Trash plus /Volumes/*/.Trashes/<uid>
 ipcMain.handle('scan:downloads', () => dirSize(path.join(HOME, 'Downloads')));
 ipcMain.handle('scan:loginItems', () => listLoginItems());
 ipcMain.handle('scan:apps', () => listInstalledApps());

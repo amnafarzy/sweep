@@ -20,26 +20,70 @@ const { runReadable, mapLimit, dirSize, HOME, LIB } = require('../lib/exec');
 const { splitNul } = require('../lib/parse');
 
 // "Children" rules: every direct child of `base` is an independent junk item.
+// `exclude` names children surfaced by another category instead (never twice);
+// `warn` puts an explicit caution label on every item of the category.
 const CHILD_JUNK = [
-  { cat: 'User caches',        base: path.join(LIB, 'Caches') },
+  { cat: 'User caches',        base: path.join(LIB, 'Caches'), exclude: ['CocoaPods'] }, // CocoaPods → Dev tool caches
   { cat: 'App logs',           base: path.join(LIB, 'Logs') },
   { cat: 'Saved app state',    base: path.join(LIB, 'Saved Application State') },
   { cat: 'Xcode derived data', base: path.join(LIB, 'Developer', 'Xcode', 'DerivedData') },
+  { cat: 'Xcode archives',     base: path.join(LIB, 'Developer', 'Xcode', 'Archives') },
   { cat: 'iOS device support', base: path.join(LIB, 'Developer', 'Xcode', 'iOS DeviceSupport') },
   { cat: 'watchOS device support', base: path.join(LIB, 'Developer', 'Xcode', 'watchOS DeviceSupport') },
   { cat: 'tvOS device support', base: path.join(LIB, 'Developer', 'Xcode', 'tvOS DeviceSupport') },
   { cat: 'Simulator caches',   base: path.join(LIB, 'Developer', 'CoreSimulator', 'Caches') },
+  // NOT regenerable: an iOS/iPadOS backup is the only copy of that device's
+  // restore point. Surfaced for review like everything else (nothing is ever
+  // pre-checked), but carries an explicit warning label in the UI.
+  { cat: 'iOS backups',        base: path.join(LIB, 'Application Support', 'MobileSync', 'Backup'),
+    warn: 'Device backup — deleting it removes your ability to restore that device' },
 ];
 
-async function listChildJunk(cat, base) {
+async function listChildJunk({ cat, base, exclude, warn }) {
   let entries = [];
   try { entries = await fsp.readdir(base, { withFileTypes: true }); } catch { return []; }
-  const kids = entries.filter((e) => e.isDirectory() || e.isFile());
+  const skip = new Set(exclude || []);
+  const kids = entries.filter((e) => (e.isDirectory() || e.isFile()) && !skip.has(e.name));
   const sized = await mapLimit(kids, 8, async (e) => {
     const full = path.join(base, e.name);
-    return { name: e.name, path: full, size: await dirSize(full), category: cat };
+    return { name: e.name, path: full, size: await dirSize(full), category: cat, ...(warn ? { warn } : {}) };
   });
   return sized.filter((x) => x.size > 0);
+}
+
+// Single-location rules: one junk item per fixed path (when it exists).
+const SINGLE_JUNK = [
+  // Attachments Mail has already downloaded — re-fetched from the mail server.
+  { cat: 'Mail downloads', name: 'Mail Downloads',
+    p: path.join(LIB, 'Containers', 'com.apple.mail', 'Data', 'Library', 'Mail Downloads') },
+  // Package-manager caches: pure re-downloadable artifacts.
+  { cat: 'Dev tool caches', name: 'npm cache', p: path.join(HOME, '.npm', '_cacache') },
+  { cat: 'Dev tool caches', name: 'Gradle caches', p: path.join(HOME, '.gradle', 'caches') },
+  { cat: 'Dev tool caches', name: 'CocoaPods cache', p: path.join(LIB, 'Caches', 'CocoaPods') },
+];
+
+async function listSingleJunk() {
+  const sized = await mapLimit(SINGLE_JUNK, 4, async ({ cat, name, p }) => (
+    { name, path: p, size: await dirSize(p), category: cat }
+  ));
+  return sized.filter((x) => x.size > 0);
+}
+
+// ~/.cache (the XDG cache dir many CLI tools share) is itself an allowed root,
+// and roots are never trashable — so the row shows ~/.cache but carries its
+// children in `paths`, the same expand-on-clean shape the grouped app rows use.
+async function listDotCache() {
+  const base = path.join(HOME, '.cache');
+  let entries = [];
+  try { entries = await fsp.readdir(base); } catch { return []; }
+  if (!entries.length) return [];
+  const size = await dirSize(base);
+  if (size <= 0) return [];
+  return [{
+    name: 'User cache dir (~/.cache)', path: base,
+    paths: entries.map((e) => path.join(base, e)),
+    size, category: 'Dev tool caches',
+  }];
 }
 
 // Sandboxed apps keep a private cache at Containers/<id>/Data/Library/Caches.
@@ -177,7 +221,9 @@ async function listInstallers() {
 
 async function scanSystemJunk() {
   const groups = await Promise.all([
-    ...CHILD_JUNK.map((r) => listChildJunk(r.cat, r.base)),
+    ...CHILD_JUNK.map((r) => listChildJunk(r)),
+    listSingleJunk(),
+    listDotCache(),
     listContainerCaches(),
     listAppMediaCaches(),
     listAppSupportCaches(),
@@ -186,4 +232,23 @@ async function scanSystemJunk() {
   return groups.flat().sort((a, b) => b.size - a.size);
 }
 
-module.exports = { scanSystemJunk };
+// Every mounted volume keeps its own per-user trash at /Volumes/<vol>/.Trashes/<uid>.
+// Sized here so the Trash view reports the real total; never trashed by Sweep
+// itself (out of ALLOWED_ROOTS) — Finder's "empty trash" already covers external
+// volumes, so the existing Empty Trash flow deletes these too.
+async function trashTotalSize() {
+  const sizes = [dirSize(path.join(HOME, '.Trash'))];
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid != null) {
+    let vols = [];
+    try { vols = await fsp.readdir('/Volumes', { withFileTypes: true }); } catch { /* none */ }
+    // real mount points are directories; skip the boot-volume symlink (→ /)
+    for (const v of vols.filter((e) => e.isDirectory())) {
+      const t = path.join('/Volumes', v.name, '.Trashes', String(uid));
+      try { await fsp.access(t); sizes.push(dirSize(t)); } catch { /* volume has no trash for us */ }
+    }
+  }
+  return (await Promise.all(sizes)).reduce((s, n) => s + n, 0);
+}
+
+module.exports = { scanSystemJunk, trashTotalSize };

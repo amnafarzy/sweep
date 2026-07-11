@@ -60,6 +60,38 @@ test('accepts leftovers inside the uninstaller\'s newer user-Library roots', () 
   }
 });
 
+test('accepts the new system-junk category locations', () => {
+  for (const p of [
+    path.join(HOME, 'Library', 'Application Support', 'MobileSync', 'Backup', '00008101-000A1B2C3D4E'),
+    path.join(HOME, 'Library', 'Containers', 'com.apple.mail', 'Data', 'Library', 'Mail Downloads'),
+    path.join(HOME, 'Library', 'Developer', 'Xcode', 'Archives', '2026-06-01'),
+    path.join(HOME, 'Library', 'Caches', 'CocoaPods'),
+    path.join(HOME, '.npm', '_cacache'),
+    path.join(HOME, '.gradle', 'caches'),
+    path.join(HOME, '.cache', 'pip'), // children of ~/.cache — the scanner never targets the root
+  ]) {
+    assert.equal(assertSafeToRemove(p), p);
+  }
+});
+
+test('rejects the dev-tool dot-dir roots themselves and their siblings', () => {
+  for (const p of [
+    path.join(HOME, '.npm'), path.join(HOME, '.cache'), path.join(HOME, '.gradle'),
+    // adjacent dotfile dirs must NOT ride along on the new roots
+    path.join(HOME, '.ssh'), path.join(HOME, '.config', 'git'), path.join(HOME, '.gradle2', 'caches'),
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
+test('external volume trash is reported only, never trashable by Sweep', () => {
+  for (const p of [
+    '/Volumes/USB/.Trashes/501', '/Volumes/USB/.Trashes/501/file.txt', '/Volumes/USB',
+  ]) {
+    assert.throws(() => assertSafeToRemove(p), /allowed areas/);
+  }
+});
+
 test('system-level /Library leftovers stay read-only (never trashable)', () => {
   for (const p of [
     '/Library/Application Support/Slack',

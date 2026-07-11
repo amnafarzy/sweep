@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld('sweep', {
   scanDownloads: () => ipcRenderer.invoke('scan:downloads'),
   scanLoginItems: () => ipcRenderer.invoke('scan:loginItems'),
   scanApps: () => ipcRenderer.invoke('scan:apps'),
+  scanAppsInfo: (paths) => ipcRenderer.invoke('scan:appsInfo', paths),
+  // Subscribe to per-app info events emitted during scanAppsInfo; returns an
+  // unsubscribe function so a view can drop its listener between scans.
+  onAppInfo: (cb) => {
+    const listener = (_e, info) => cb(info);
+    ipcRenderer.on('apps:info', listener);
+    return () => ipcRenderer.removeListener('apps:info', listener);
+  },
   scanAppLeftovers: (name, appPath) => ipcRenderer.invoke('scan:appLeftovers', name, appPath),
   checkAccess: () => ipcRenderer.invoke('scan:access'),
 

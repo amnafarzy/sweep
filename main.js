@@ -12,7 +12,7 @@ const { scanSystemJunk } = require('./scanners/systemJunk');
 const { scanLargeFiles } = require('./scanners/largeFiles');
 const { getMemory } = require('./scanners/memory');
 const { listLoginItems, toggleLoginItem } = require('./scanners/loginItems');
-const { listInstalledApps, findAppLeftovers } = require('./scanners/apps');
+const { listInstalledApps, getAppsInfo, findAppLeftovers } = require('./scanners/apps');
 const { hasFullDiskAccess } = require('./scanners/access');
 
 app.setName('Sweep'); // shown in the macOS app menu / "About Sweep" / "Quit Sweep"
@@ -51,6 +51,12 @@ ipcMain.handle('scan:trash', () => dirSize(path.join(HOME, '.Trash')));
 ipcMain.handle('scan:downloads', () => dirSize(path.join(HOME, 'Downloads')));
 ipcMain.handle('scan:loginItems', () => listLoginItems());
 ipcMain.handle('scan:apps', () => listInstalledApps());
+// Streams one 'apps:info' event per app as its size/last-used lands, so the
+// renderer can fill the (already rendered) list in lazily. getAppsInfo
+// re-validates every path against APP_BUNDLE_RE before touching it.
+ipcMain.handle('scan:appsInfo', (e, paths) => getAppsInfo(paths, (info) => {
+  if (!e.sender.isDestroyed()) e.sender.send('apps:info', info);
+}));
 ipcMain.handle('scan:appLeftovers', (_e, name, appPath) => findAppLeftovers(name, appPath));
 ipcMain.handle('scan:access', async () => ({ fullDiskAccess: await hasFullDiskAccess() }));
 

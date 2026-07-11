@@ -23,6 +23,23 @@ test('accepts a single /Applications/*.app bundle (incl. names with spaces)', ()
   assert.ok(APP_BUNDLE_RE.test('/Applications/Foo.app'));
 });
 
+test('accepts a bundle one vendor-folder deep inside /Applications', () => {
+  assert.equal(assertSafeToRemove('/Applications/Utilities/Foo.app'), '/Applications/Utilities/Foo.app');
+  assert.equal(
+    assertSafeToRemove('/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app'),
+    '/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app',
+  );
+  assert.ok(APP_BUNDLE_RE.test('/Applications/Vendor/Foo.app'));
+});
+
+test('accepts a top-level ~/Applications/*.app bundle', () => {
+  const p = path.join(HOME, 'Applications', 'Foo.app');
+  assert.equal(assertSafeToRemove(p), p);
+  const spaced = path.join(HOME, 'Applications', 'My Tool.app');
+  assert.equal(assertSafeToRemove(spaced), spaced);
+  assert.ok(APP_BUNDLE_RE.test(p));
+});
+
 test('rejects each allowed root itself (never trash the whole folder)', () => {
   for (const root of ALLOWED_ROOTS) {
     assert.throws(() => assertSafeToRemove(root), /allowed areas/);
@@ -62,11 +79,27 @@ test('rejects empty / non-string input', () => {
   }
 });
 
-test('rejects an /Applications path that is not a single *.app bundle', () => {
+test('rejects application paths outside the exact allowed bundle depths', () => {
   assert.throws(() => assertSafeToRemove('/Applications'), /allowed areas/);
   assert.throws(() => assertSafeToRemove('/Applications/Foo.txt'), /allowed areas/);
   assert.throws(() => assertSafeToRemove('/Applications/Foo.app/Contents'), /allowed areas/);
-  assert.throws(() => assertSafeToRemove('/Applications/Nested/Foo.app'), /allowed areas/);
+  // vendor folder itself, and non-bundle files inside one
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor/notes.txt'), /allowed areas/);
+  // two levels of nesting is too deep
+  assert.throws(() => assertSafeToRemove('/Applications/A/B/Foo.app'), /allowed areas/);
+  // a bundle *inside* another bundle is bundle innards, not an app
+  assert.throws(() => assertSafeToRemove('/Applications/Foo.app/Nested.app'), /allowed areas/);
+  // ~/Applications: root itself, nested bundles, and bundle innards all refused
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications')), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications', 'Sub', 'Foo.app')), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'Applications', 'Foo.app', 'Contents')), /allowed areas/);
+  // wrong-case variants never match (see case-insensitivity rationale above)
+  assert.throws(() => assertSafeToRemove('/applications/Foo.app'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove(path.join(HOME, 'applications', 'Foo.app')), /allowed areas/);
+  // a bare ".app" segment is not a bundle name
+  assert.throws(() => assertSafeToRemove('/Applications/.app'), /allowed areas/);
+  assert.throws(() => assertSafeToRemove('/Applications/Vendor/.app'), /allowed areas/);
 });
 
 test('isStrictlyInside excludes the parent itself but includes descendants', () => {

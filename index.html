@@ -131,8 +131,17 @@
 
       <!-- UNINSTALLER -->
       <section class="view" id="view-apps">
-        <header class="view-head"><div><h1>Uninstaller</h1><p class="lead">Remove an app and its leftover support files together.</p></div>
-          <button class="btn" id="appsScan">Load apps</button>
+        <header class="view-head">
+          <div><h1>Uninstaller</h1><p class="lead">Remove an app and its leftover support files together.</p></div>
+          <div class="head-controls">
+            <label class="chk"><input type="checkbox" id="appsUnusedOnly" /> Not used in 6+ months</label>
+            <select id="appsSort">
+              <option value="name">Sort: Name</option>
+              <option value="size">Sort: Size</option>
+              <option value="lastUsed">Sort: Last used</option>
+            </select>
+            <button class="btn" id="appsScan">Load apps</button>
+          </div>
         </header>
         <div class="list" id="appsList"><p class="empty">Tap Load apps to begin.</p></div>
       </section>

@@ -8,13 +8,22 @@ export function initLoginItems() {
     list.innerHTML = '<p class="empty"><span class="spinner"></span>Loading…</p>';
     const items = await api.scanLoginItems();
     list.innerHTML = '';
-    if (!items.length) { list.appendChild(el('p', 'empty', 'No user launch agents found.')); return; }
+    if (!items.length) { list.appendChild(el('p', 'empty', 'No launch agents or daemons found.')); return; }
     items.forEach((it) => {
       const row = el('div', 'row');
       const info = el('div', ''); info.style.flex = '1'; info.style.minWidth = '0';
       const nameDiv = el('div', 'r-name', escapeHtml(it.name));
       const pathDiv = el('div', 'r-path', escapeHtml(it.path));
       info.appendChild(nameDiv); info.appendChild(pathDiv);
+      // System-level agents/daemons are shown for the full picture but need
+      // admin rights to change — no toggle, just a lock badge.
+      if (it.scope === 'system') {
+        const badge = el('div', 'r-tag', '🔒 admin — read-only');
+        badge.title = 'System-level item in ' + (it.path.includes('LaunchDaemons') ? '/Library/LaunchDaemons' : '/Library/LaunchAgents') + ' — Sweep never modifies these.';
+        row.appendChild(info); row.appendChild(badge);
+        list.appendChild(row);
+        return;
+      }
       const tog = el('button', 'toggle' + (it.enabled ? ' on' : ''));
       tog.setAttribute('aria-label', 'Toggle login item ' + it.name);
       tog.setAttribute('aria-pressed', String(it.enabled));

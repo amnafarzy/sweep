@@ -9,7 +9,7 @@
 // fmtBytes is defined in lib/format.js (a UMD loaded via a classic <script> just
 // before this module) so the same implementation is shared with — and unit-tested
 // by — the Node test suite. It attaches to window as SweepFormat.
-export const { fmtBytes } = window.SweepFormat;
+export const { fmtBytes, fileKind } = window.SweepFormat;
 
 export function $(s) { return document.querySelector(s); }
 

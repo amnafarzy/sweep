@@ -31,6 +31,10 @@ contextBridge.exposeInMainWorld('sweep', {
   quitApp: (appPath) => ipcRenderer.invoke('app:quit', appPath),
   checkAccess: () => ipcRenderer.invoke('scan:access'),
 
+  addIgnore: (p) => ipcRenderer.invoke('ignore:add', p),
+  removeIgnore: (p) => ipcRenderer.invoke('ignore:remove', p),
+  listIgnores: () => ipcRenderer.invoke('ignore:list'),
+
   cleanCaches: (paths) => ipcRenderer.invoke('clean:caches', paths),
   trashFiles: (paths) => ipcRenderer.invoke('clean:trashFiles', paths),
   emptyTrash: () => ipcRenderer.invoke('clean:emptyTrash'),

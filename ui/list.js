@@ -9,7 +9,10 @@
 import { el, escapeHtml, fmtBytes } from './dom.js';
 import { api } from './api.js';
 
-export function buildSelectableList(container, items, { tag } = {}) {
+// Options: `tag` shows the category/dir chip; `meta(it)` adds a dim fixed
+// column (e.g. kind + last-opened date); `onIgnore(it)` adds a per-row Ignore
+// button for the persistent ignore list.
+export function buildSelectableList(container, items, { tag, meta, onIgnore } = {}) {
   container.innerHTML = '';
   if (!items.length) { container.appendChild(el('p', 'empty', 'Nothing found — you\'re clean here.')); return; }
   items.forEach((it, idx) => {
@@ -22,11 +25,18 @@ export function buildSelectableList(container, items, { tag } = {}) {
     const tagText = it.category || it.dir;
     if (tag && tagText) row.appendChild(el('div', 'r-tag', escapeHtml(tagText)));
     row.appendChild(info);
+    if (meta) row.appendChild(el('div', 'r-meta', escapeHtml(meta(it))));
     row.appendChild(size);
+    if (onIgnore) {
+      const ig = el('button', 'btn btn-ghost', 'Ignore');
+      ig.title = 'Hide this path from future scans (review in Settings)';
+      ig.onclick = (e) => { e.stopPropagation(); onIgnore(it); };
+      row.appendChild(ig);
+    }
     // Clicking anywhere on the row toggles its checkbox (the checkbox itself
-    // still works natively — guard against double-toggling).
+    // still works natively, and buttons keep their own clicks).
     row.onclick = (e) => {
-      if (e.target === cb) return;
+      if (e.target === cb || e.target.closest('button')) return;
       cb.checked = !cb.checked;
       cb.dispatchEvent(new Event('change'));
     };

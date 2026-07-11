@@ -66,8 +66,17 @@ function renderSystemJunk(items) {
       const info = el('div', '', `<div class="r-name">${escapeHtml(it.name)}${warnBadge}</div><div class="r-path">${escapeHtml(it.path)}</div>`);
       info.style.flex = '1'; info.style.minWidth = '0';
       const size = el('div', 'r-size', fmtBytes(it.size));
-      row.append(icb, info, size);
-      row.onclick = (e) => { if (e.target === icb) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };
+      const ig = el('button', 'btn btn-ghost', 'Ignore');
+      ig.title = 'Hide this path from future scans (review in Settings)';
+      ig.onclick = async (e) => {
+        e.stopPropagation();
+        await api.addIgnore(it.path);
+        cachesData = cachesData.filter((x) => x !== it);
+        renderSystemJunk(cachesData);
+        toast('Ignored — review under Settings');
+      };
+      row.append(icb, info, size, ig);
+      row.onclick = (e) => { if (e.target === icb || e.target.closest('button')) return; icb.checked = !icb.checked; icb.dispatchEvent(new Event('change')); };
       body.appendChild(row);
     });
 

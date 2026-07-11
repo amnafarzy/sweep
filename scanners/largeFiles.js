@@ -31,7 +31,10 @@ async function scanLargeFiles(minMB, { signal, onProgress } = {}) {
     for (const f of files) {
       try {
         const st = await fsp.stat(f);
-        results.push({ name: path.basename(f), path: f, size: st.size, dir: root.split('/').pop() });
+        results.push({
+          name: path.basename(f), path: f, size: st.size, dir: root.split('/').pop(),
+          lastOpened: st.atime.getTime(), // atime: cheap and good enough for "last opened"
+        });
       } catch { /* skip */ }
     }
     done += 1;

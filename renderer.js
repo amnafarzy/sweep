@@ -15,6 +15,7 @@ import { initTrash } from './views/trash.js';
 import { initMemory } from './views/memory.js';
 import { initLoginItems } from './views/loginItems.js';
 import { initUninstaller } from './views/uninstaller.js';
+import { initSettings } from './views/settings.js';
 
 // If the preload bridge failed to load, the app can do nothing useful — surface
 // a clear message instead of throwing an opaque error on every interaction.
@@ -44,3 +45,4 @@ initTrash();
 initMemory();
 initLoginItems();
 initUninstaller();
+initSettings();

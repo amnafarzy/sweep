@@ -3,6 +3,7 @@ const path = require('path');
 
 const { run, dirSize, HOME } = require('./lib/exec');
 const { assertSafeToRemove } = require('./lib/safety');
+const { createIgnoreStore } = require('./lib/ignoreStore');
 
 // Read-only scanners and the (validated) destructive toggles live in scanners/.
 // main.js stays the Electron glue: it wires these to IPC channels and owns the
@@ -50,6 +51,11 @@ async function trashMany(paths) {
 // ---------------------------------------------------------------------------
 const activeScans = new Map(); // webContents id -> AbortController
 
+// User-ignored paths, persisted under userData and stripped from System Junk /
+// Large Files results. Created lazily so app.getPath sees the final app name.
+let _ignores;
+const ignores = () => (_ignores ??= createIgnoreStore(path.join(app.getPath('userData'), 'ignored.json')));
+
 function cancellableScan(e, fn) {
   activeScans.get(e.sender.id)?.abort();
   const ctrl = new AbortController();
@@ -67,12 +73,12 @@ function cancellableScan(e, fn) {
 // IPC
 // ---------------------------------------------------------------------------
 ipcMain.handle('scan:dirSize', (_e, p) => { assertSafeToRemove(p); return dirSize(p); });
-ipcMain.handle('scan:systemJunk', (e) => cancellableScan(e, (signal, onProgress) => (
-  scanSystemJunk({ signal, onProgress })
+ipcMain.handle('scan:systemJunk', (e) => cancellableScan(e, async (signal, onProgress) => (
+  ignores().filterItems(await scanSystemJunk({ signal, onProgress }))
 )));
 ipcMain.handle('scan:memory', () => getMemory());
-ipcMain.handle('scan:largeFiles', (e, minMB) => cancellableScan(e, (signal, onProgress) => (
-  scanLargeFiles(minMB, { signal, onProgress })
+ipcMain.handle('scan:largeFiles', (e, minMB) => cancellableScan(e, async (signal, onProgress) => (
+  ignores().filterItems(await scanLargeFiles(minMB, { signal, onProgress }))
 )));
 // The dashboard's combined Smart Scan: one cancellable pass over everything.
 // Each stage reports its own done/total; the stage name is prefixed onto the
@@ -91,9 +97,19 @@ ipcMain.handle('scan:smart', (e) => cancellableScan(e, async (signal, onProgress
     trashTotalSize(signal), dirSize(path.join(HOME, 'Downloads'), signal),
   ]);
   onProgress({ phase: 'Trash & Downloads', done: 1, total: 1 });
-  return { junk, large, trash, downloads };
+  return {
+    junk: await ignores().filterItems(junk),
+    large: await ignores().filterItems(large),
+    trash, downloads,
+  };
 }));
 ipcMain.handle('scan:cancel', (e) => { activeScans.get(e.sender.id)?.abort(); });
+
+// Ignore list: hides paths from scan results only — grants nothing, so the
+// paths need no allowlist validation.
+ipcMain.handle('ignore:add', (_e, p) => ignores().add(p));
+ipcMain.handle('ignore:remove', (_e, p) => ignores().remove(p));
+ipcMain.handle('ignore:list', () => ignores().list());
 ipcMain.handle('scan:trash', () => trashTotalSize()); // ~/.Trash plus /Volumes/*/.Trashes/<uid>
 ipcMain.handle('scan:downloads', () => dirSize(path.join(HOME, 'Downloads')));
 ipcMain.handle('scan:loginItems', () => listLoginItems());
